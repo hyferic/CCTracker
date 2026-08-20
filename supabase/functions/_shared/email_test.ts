@@ -87,14 +87,16 @@ Deno.test('network failures are ambiguous rather than blindly retried with a new
 });
 
 Deno.test('a slow provider is aborted at the configured transport timeout', async () => {
-  let providerSignal: AbortSignal | null = null;
+  const providerSignals: AbortSignal[] = [];
   const transport = new ResendTransport({
     apiKey: 're_test_key',
     timeoutMs: 10,
     fetchImplementation: ((_input: string | URL | Request, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
-        providerSignal = init?.signal ?? null;
-        providerSignal?.addEventListener(
+        const providerSignal = init?.signal;
+        if (!providerSignal) return;
+        providerSignals.push(providerSignal);
+        providerSignal.addEventListener(
           'abort',
           () => reject(new DOMException('Provider request aborted.', 'AbortError')),
           { once: true },
@@ -103,7 +105,7 @@ Deno.test('a slow provider is aborted at the configured transport timeout', asyn
   });
 
   const result = await transport.send(payload, '11111111-1111-4111-8111-111111111111');
-  assert(providerSignal?.aborted);
+  assert(providerSignals[0]?.aborted);
   assertEquals(result.outcome, 'ambiguous');
   assertEquals(result.errorCategory, 'transport_timeout');
 });

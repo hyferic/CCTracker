@@ -90,7 +90,11 @@ class FakeDatabase implements DatabaseGateway {
     });
   }
 
-  claimNotifications(): Promise<ClaimedNotification[]> {
+  claimNotifications(
+    _jobRunId: string,
+    _batchSize: number,
+    _leaseSeconds: number,
+  ): Promise<ClaimedNotification[]> {
     this.claimCalls += 1;
     return Promise.resolve(this.claimBatches.shift() ?? []);
   }
