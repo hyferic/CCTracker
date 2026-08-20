@@ -227,7 +227,9 @@ begin
       v_revision.currency, v_unit,
       to_char(v_period_start, 'Mon DD, YYYY') || ' – ' || to_char(v_period_end, 'Mon DD, YYYY'),
       p_source, false
-    ) on conflict do nothing;
+    ) on conflict (definition_id, occurrence_key)
+      where voided_at is null
+      do nothing;
     get diagnostics v_rows = row_count;
     return v_rows;
   end if;
@@ -300,7 +302,9 @@ begin
       v_revision.currency, v_unit,
       to_char(v_period_start, 'Mon DD, YYYY') || ' – ' || to_char(v_period_end, 'Mon DD, YYYY'),
       p_source, v_reactivation
-    ) on conflict do nothing;
+    ) on conflict (definition_id, occurrence_key)
+      where voided_at is null
+      do nothing;
     get diagnostics v_rows = row_count;
     v_inserted := v_inserted + v_rows;
   end loop;
