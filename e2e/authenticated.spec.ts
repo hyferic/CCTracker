@@ -114,7 +114,14 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   await page.getByLabel(/Expiration\/end date/i).fill(localDate(60));
   await page.getByLabel('Recurrence').selectOption('monthly');
   await page.getByRole('button', { name: 'Create benefit' }).click();
-  await expect(page).toHaveURL(/#\/instances\/[0-9a-f-]+$/i);
+  const creationFailure = await Promise.race([
+    page.waitForURL(/#\/instances\/[0-9a-f-]+$/i).then(() => null),
+    page
+      .getByRole('alert')
+      .waitFor({ state: 'visible' })
+      .then(() => page.getByRole('alert').innerText()),
+  ]);
+  expect(creationFailure, `Benefit creation failed: ${creationFailure ?? ''}`).toBeNull();
   await expect(page.getByRole('heading', { name: benefitName, exact: true })).toBeVisible();
 
   await page.getByRole('link', { name: 'Edit rules' }).click();
