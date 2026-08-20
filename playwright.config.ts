@@ -30,6 +30,7 @@ export default defineConfig({
       VITE_SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey,
       VITE_APP_BASE_URL: 'http://127.0.0.1:4173/',
       VITE_BASE_PATH: '/',
+      VITE_E2E_AUTH_SESSION: 'true',
     },
   },
   projects: [

@@ -37,27 +37,18 @@ async function installAuthenticatedSession(request: APIRequestContext, page: Pag
   const tokenResponse = JSON.parse(responseText) as LocalSession;
   expect(tokenResponse.access_token).toBeTruthy();
   expect(tokenResponse.refresh_token).toBeTruthy();
-  const session = {
-    ...tokenResponse,
-    // Raw GoTrue token responses expose expires_in; Supabase JS persisted
-    // sessions require the absolute expires_at field produced by its client.
-    expires_at:
-      tokenResponse.expires_at ?? Math.floor(Date.now() / 1_000) + tokenResponse.expires_in,
-  };
-
-  const storageKey = `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`;
-  // Seed storage on the real preview origin, then perform a full reload so the
-  // already-created Supabase client recovers the session before hash routing.
   await page.goto('/');
-  await page.evaluate(({ key, value }) => window.localStorage.setItem(key, value), {
-    key: storageKey,
-    value: JSON.stringify(session),
-  });
-  expect(await page.evaluate((key) => window.localStorage.getItem(key), storageKey)).toBe(
-    JSON.stringify(session),
+  await page.waitForFunction(() => typeof window.__PERKLEDGER_E2E_SET_SESSION__ === 'function');
+  await page.evaluate(
+    async ({ accessToken, refreshToken }) => {
+      await window.__PERKLEDGER_E2E_SET_SESSION__?.(accessToken, refreshToken);
+    },
+    {
+      accessToken: tokenResponse.access_token,
+      refreshToken: tokenResponse.refresh_token,
+    },
   );
-  await page.reload();
-  return { session, supabaseUrl, publishableKey };
+  return { session: tokenResponse, supabaseUrl, publishableKey };
 }
 
 function localDate(days = 0) {

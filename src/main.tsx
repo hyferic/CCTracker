@@ -32,6 +32,19 @@ async function exchangePkceCode() {
 
 await exchangePkceCode();
 
+// The Playwright build can bootstrap a real local Auth session through the
+// official client API. This branch is compiled out of normal deployments.
+const e2eSupabase = supabase;
+if (import.meta.env.VITE_E2E_AUTH_SESSION === 'true' && e2eSupabase) {
+  window.__PERKLEDGER_E2E_SET_SESSION__ = async (accessToken, refreshToken) => {
+    const { error } = await e2eSupabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error) throw error;
+  };
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('Application root not found.');
 createRoot(root).render(
