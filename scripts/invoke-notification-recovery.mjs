@@ -38,9 +38,6 @@ try {
   clearTimeout(timeout);
 }
 
-if (response.headers.has('access-control-allow-origin')) {
-  throw new Error('Scheduler endpoint unexpectedly emitted a CORS allow-origin header.');
-}
 if (!response.ok) throw new Error(`Recovery endpoint returned HTTP ${response.status}.`);
 
 const body = await response.json();
