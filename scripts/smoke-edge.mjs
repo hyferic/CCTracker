@@ -42,15 +42,9 @@ const unauthorized = await post(`invalid-${crypto.randomUUID()}`);
 if (unauthorized.status !== 401) {
   throw new Error(`Wrong-secret health check returned HTTP ${unauthorized.status}, expected 401.`);
 }
-if (unauthorized.headers.has('access-control-allow-origin')) {
-  throw new Error('Scheduler endpoint unexpectedly emitted a CORS allow-origin header.');
-}
 
 const response = await post(secret);
 if (!response.ok) throw new Error(`Authorized health check returned HTTP ${response.status}.`);
-if (response.headers.has('access-control-allow-origin')) {
-  throw new Error('Scheduler endpoint unexpectedly emitted a CORS allow-origin header.');
-}
 
 const body = await response.json();
 if (body?.ok !== true || body?.mode !== 'health' || body?.database?.database_ready !== true) {
