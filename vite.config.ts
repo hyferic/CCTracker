@@ -5,10 +5,25 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const repository = env.GITHUB_REPOSITORY?.split('/')[1];
   const base = env.VITE_BASE_PATH ?? (repository ? `/${repository}/` : '/');
+  const configuredSupabaseUrl = env.VITE_SUPABASE_URL?.trim();
+  let supabaseConnectSources = 'https://*.supabase.co wss://*.supabase.co';
+  if (configuredSupabaseUrl) {
+    const supabaseUrl = new URL(configuredSupabaseUrl);
+    const websocketProtocol = supabaseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    supabaseConnectSources = `${supabaseUrl.origin} ${websocketProtocol}//${supabaseUrl.host}`;
+  }
 
   return {
     base,
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        name: 'exact-supabase-csp-origin',
+        transformIndexHtml(html) {
+          return html.replace('__SUPABASE_CONNECT_SRC__', supabaseConnectSources);
+        },
+      },
+    ],
     build: {
       sourcemap: true,
       target: 'es2022',
