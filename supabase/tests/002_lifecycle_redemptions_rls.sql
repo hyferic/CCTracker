@@ -66,6 +66,12 @@ with created as (
 insert into test_context(key, value)
 select 'definition', (result->>'definition_id')::uuid from created;
 
+select lives_ok(
+  'set constraints validate_revision_chain immediate',
+  'revision integrity can execute at API transaction commit under the authenticated role'
+);
+set constraints validate_revision_chain deferred;
+
 insert into test_context(key, value)
 select 'current_instance', i.id
 from public.benefit_instances i

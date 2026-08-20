@@ -69,7 +69,11 @@ for each row execute function private.protect_revision_history();
 create or replace function private.validate_revision_chain()
 returns trigger
 language plpgsql
-security invoker
+-- This deferred trigger fires at transaction commit, after a security-definer
+-- lifecycle RPC has returned to the authenticated caller. It needs narrowly
+-- scoped definer rights to call private.make_revision_snapshot without granting
+-- browser roles access to the private schema.
+security definer
 set search_path = ''
 as $$
 declare
