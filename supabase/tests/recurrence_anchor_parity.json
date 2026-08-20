@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "semantics": "Always add the offset to the original anchor. If that anchor is its source month's final day, use the target month's final day; otherwise clamp its day only when necessary.",
+  "cases": [
+    { "anchor": "2027-01-31", "offsetMonths": 1, "expected": "2027-02-28" },
+    { "anchor": "2028-01-31", "offsetMonths": 1, "expected": "2028-02-29" },
+    { "anchor": "2027-01-31", "offsetMonths": 2, "expected": "2027-03-31" },
+    { "anchor": "2027-02-28", "offsetMonths": 12, "expected": "2028-02-29" },
+    { "anchor": "2024-02-29", "offsetMonths": 12, "expected": "2025-02-28" },
+    { "anchor": "2024-02-29", "offsetMonths": 48, "expected": "2028-02-29" },
+    { "anchor": "2027-04-30", "offsetMonths": 1, "expected": "2027-05-31" },
+    { "anchor": "2027-04-30", "offsetMonths": 2, "expected": "2027-06-30" },
+    { "anchor": "2027-08-31", "offsetMonths": 1, "expected": "2027-09-30" },
+    { "anchor": "2027-08-31", "offsetMonths": 2, "expected": "2027-10-31" },
+    { "anchor": "2027-11-30", "offsetMonths": 1, "expected": "2027-12-31" },
+    { "anchor": "2027-12-31", "offsetMonths": 1, "expected": "2028-01-31" },
+    { "anchor": "2027-05-30", "offsetMonths": 2, "expected": "2027-07-30" },
+    { "anchor": "2027-03-31", "offsetMonths": -1, "expected": "2027-02-28" }
+  ]
+}
