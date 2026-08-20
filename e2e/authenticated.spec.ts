@@ -15,7 +15,7 @@ interface LocalSession {
   access_token: string;
   refresh_token: string;
   expires_in: number;
-  expires_at: number;
+  expires_at?: number;
   token_type: string;
   user: Record<string, unknown>;
 }
@@ -34,9 +34,16 @@ async function installAuthenticatedSession(request: APIRequestContext, page: Pag
   });
   const responseText = await response.text();
   expect(response.ok(), `Local Supabase password grant failed: ${responseText}`).toBeTruthy();
-  const session = JSON.parse(responseText) as LocalSession;
-  expect(session.access_token).toBeTruthy();
-  expect(session.refresh_token).toBeTruthy();
+  const tokenResponse = JSON.parse(responseText) as LocalSession;
+  expect(tokenResponse.access_token).toBeTruthy();
+  expect(tokenResponse.refresh_token).toBeTruthy();
+  const session = {
+    ...tokenResponse,
+    // Raw GoTrue token responses expose expires_in; Supabase JS persisted
+    // sessions require the absolute expires_at field produced by its client.
+    expires_at:
+      tokenResponse.expires_at ?? Math.floor(Date.now() / 1_000) + tokenResponse.expires_in,
+  };
 
   const storageKey = `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`;
   await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), {
