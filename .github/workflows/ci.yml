@@ -79,11 +79,8 @@ jobs:
       - name: Install exact dependencies
         run: npm ci
 
-      - name: Start local Supabase
+      - name: Start fresh local Supabase from migrations and seed
         run: npm exec -- supabase start
-
-      - name: Rebuild database from migrations and seed
-        run: npm exec -- supabase db reset --local
 
       - name: Lint local database functions
         run: npm exec -- supabase db lint --local --fail-on error
@@ -158,10 +155,8 @@ jobs:
       - name: Install pinned Playwright browsers
         run: npx playwright install --with-deps chromium webkit
 
-      - name: Start and reset local Supabase
-        run: |
-          npm exec -- supabase start
-          npm exec -- supabase db reset --local
+      - name: Start fresh local Supabase from migrations and seed
+        run: npm exec -- supabase start
 
       - name: Export actual browser-safe local Supabase configuration
         shell: bash
