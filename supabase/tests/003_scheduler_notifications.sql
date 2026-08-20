@@ -235,8 +235,9 @@ select is((
   from public.notifications n
   where n.id = (select notification_id from scheduler_claims where sequence = 3)
 ), 'reactivation', 'the claimed event has reactivation identity');
-select like((select frozen_payload_text from scheduler_claims where sequence = 3),
-  '%Benefit available again:%', 'reactivation freezes the available-again email payload');
+select ok(position('Benefit available again:' in
+  (select frozen_payload_text from scheduler_claims where sequence = 3)) > 0,
+  'reactivation freezes the available-again email payload');
 select is((
   select extract(epoch from (n.lease_expires_at - n.claimed_at))::integer
   from public.notifications n
