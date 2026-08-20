@@ -46,10 +46,17 @@ async function installAuthenticatedSession(request: APIRequestContext, page: Pag
   };
 
   const storageKey = `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`;
-  await page.addInitScript(({ key, value }) => window.localStorage.setItem(key, value), {
+  // Seed storage on the real preview origin, then perform a full reload so the
+  // already-created Supabase client recovers the session before hash routing.
+  await page.goto('/');
+  await page.evaluate(({ key, value }) => window.localStorage.setItem(key, value), {
     key: storageKey,
     value: JSON.stringify(session),
   });
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), storageKey)).toBe(
+    JSON.stringify(session),
+  );
+  await page.reload();
   return { session, supabaseUrl, publishableKey };
 }
 
