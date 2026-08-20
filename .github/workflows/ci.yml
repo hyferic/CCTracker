@@ -100,13 +100,19 @@ jobs:
             --env-file supabase/functions/test.env \
             --no-verify-jwt >"$RUNNER_TEMP/process-notifications.log" 2>&1 &
           echo "$!" >"$RUNNER_TEMP/process-notifications.pid"
-          for attempt in {1..30}; do
-            if curl --silent --output /dev/null \
-              http://127.0.0.1:54321/functions/v1/process-notifications; then
+          for attempt in {1..60}; do
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --request POST \
+              --header 'content-type: application/json' \
+              --header 'x-scheduler-secret: readiness-probe-secret-is-intentionally-wrong' \
+              --data '{"mode":"health"}' \
+              http://127.0.0.1:54321/functions/v1/process-notifications || true)"
+            if [[ "$status" == '401' ]]; then
               exit 0
             fi
             sleep 1
           done
+          tail -n 100 "$RUNNER_TEMP/process-notifications.log" || true
           exit 1
 
       - name: Exercise scheduler authorization and health over HTTP
