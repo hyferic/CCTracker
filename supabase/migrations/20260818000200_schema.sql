@@ -293,7 +293,9 @@ create table public.benefit_definition_revisions (
   unique (definition_id, revision_no),
   foreign key (definition_id, user_id) references public.benefit_definitions(id, user_id) on delete cascade,
   foreign key (account_id, user_id) references public.accounts(id, user_id),
-  constraint benefit_revision_validity_order check (valid_to is null or valid_to >= valid_from),
+  -- A revision corrected on its first effective day is retained as a zero-day
+  -- audit snapshot (valid_to = valid_from - 1).
+  constraint benefit_revision_validity_order check (valid_to is null or valid_to >= valid_from - 1),
   constraint benefit_revision_date_order check (end_date is null or end_date >= effective_date),
   constraint benefit_revision_display_reset_date check (
     display_reset_date is null or (
@@ -366,7 +368,7 @@ alter table public.benefit_definition_revisions
   add constraint benefit_revision_ranges_do_not_overlap
   exclude using gist (
     definition_id with =,
-    daterange(valid_from, valid_to, '[]') with &&
+    daterange(valid_from, case when valid_to is null then null else valid_to + 1 end, '[)') with &&
   ) deferrable initially immediate;
 
 create table public.benefit_instances (

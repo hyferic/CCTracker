@@ -1,5 +1,8 @@
 begin;
 
+-- Business dates are explicitly evaluated in the owner's configured timezone.
+set local timezone = 'America/New_York';
+
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions, pg_catalog;
 select no_plan();

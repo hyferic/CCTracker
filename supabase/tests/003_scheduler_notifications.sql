@@ -1,5 +1,8 @@
 begin;
 
+-- Keep fixture current_date aligned with the owner's configured business date.
+set local timezone = 'America/New_York';
+
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions, pg_catalog;
 select no_plan();
@@ -95,8 +98,9 @@ select is((
   ) from scheduler_claims where sequence = 1
 ), (select payload_sha256 from scheduler_claims where sequence = 1),
   'payload SHA-256 covers the exact serialized bytes returned to Edge');
-select like((select frozen_payload_text from scheduler_claims where sequence = 1),
-  '%Benefit expiring soon:%', 'frozen payload contains the expiration subject');
+select ok(position('Benefit expiring soon:' in
+  (select frozen_payload_text from scheduler_claims where sequence = 1)) > 0,
+  'frozen payload contains the expiration subject');
 select is((select attempt_count from scheduler_claims where sequence = 1), 1, 'first claim records attempt one');
 
 select throws_ok(format(

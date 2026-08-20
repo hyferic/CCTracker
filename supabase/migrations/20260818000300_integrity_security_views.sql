@@ -47,7 +47,7 @@ begin
   if coalesce(current_setting('app.lifecycle_write', true), '') <> 'on'
      or old.valid_to is not null
      or new.valid_to is null
-     or new.valid_to < old.valid_from
+     or new.valid_to < old.valid_from - 1
      or new.closed_at is null
      or (to_jsonb(new) - array['valid_to', 'closed_at', 'business_snapshot'])
         is distinct from

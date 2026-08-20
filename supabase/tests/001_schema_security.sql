@@ -57,7 +57,8 @@ select ok((
 select ok(has_table_privilege('authenticated', 'public.accounts', 'SELECT'), 'authenticated may select accounts');
 select ok(has_table_privilege('authenticated', 'public.benefit_instance_overview', 'SELECT'),
   'authenticated may select the live-only overview');
-select ok(has_table_privilege('authenticated', 'public.accounts', 'INSERT'), 'authenticated may insert accounts');
+select ok(has_column_privilege('authenticated', 'public.accounts', 'user_id', 'INSERT'),
+  'authenticated has the intended column-scoped account insert grant');
 select ok(not has_table_privilege('authenticated', 'public.benefit_definitions', 'INSERT'), 'definitions cannot be inserted directly');
 select ok(not has_table_privilege('anon', 'public.accounts', 'SELECT'), 'anonymous role cannot read accounts');
 select ok(not has_schema_privilege('authenticated', 'private', 'USAGE'), 'authenticated role cannot use private schema');

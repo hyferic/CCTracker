@@ -649,7 +649,7 @@ begin
     order by i.period_start limit 1;
   end if;
 
-  if v_boundary is null or v_boundary <= v_open_revision.valid_from then
+  if v_boundary is null or v_boundary < v_open_revision.valid_from then
     raise exception 'edit boundary must be an occurrence boundary after the open revision start'
       using errcode = '22023';
   end if;
