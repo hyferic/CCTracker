@@ -66,6 +66,14 @@ begin
     raise exception 'backup exceeds the 5,000 row limit' using errcode = '54000';
   end if;
 
+  -- plpgsql_check cannot infer temp-table shapes created inside a function.
+  -- These string expressions are checker pragmas and harmless no-ops at runtime.
+  perform 'PRAGMA:TABLE: pg_temp.import_account_map(old_id text, new_id uuid, skipped boolean)';
+  perform 'PRAGMA:TABLE: pg_temp.import_definition_map(old_id text, new_id uuid, skipped boolean)';
+  perform 'PRAGMA:TABLE: pg_temp.import_revision_map(old_id text, new_id uuid)';
+  perform 'PRAGMA:TABLE: pg_temp.import_instance_map(old_id text, new_id uuid, old_supersedes_id text)';
+  perform 'PRAGMA:TABLE: pg_temp.import_skipped_instances(old_id text)';
+
   drop table if exists pg_temp.import_account_map;
   drop table if exists pg_temp.import_definition_map;
   drop table if exists pg_temp.import_revision_map;

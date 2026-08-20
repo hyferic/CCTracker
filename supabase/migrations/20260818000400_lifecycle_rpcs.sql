@@ -157,7 +157,6 @@ declare
   v_period_start date;
   v_period_end date;
   v_occurrence_key text;
-  v_sequence integer;
   v_max_sequence integer;
   v_inserted integer := 0;
   v_rows integer;
@@ -756,6 +755,9 @@ begin
 
   v_new_revision := private.insert_revision_from_definition(v_definition.id, v_boundary);
 
+  -- plpgsql_check cannot infer temp-table shapes created inside a function.
+  -- This string expression is a checker pragma and a harmless no-op at runtime.
+  perform 'PRAGMA:TABLE: pg_temp.replaced_benefit_instances(old_instance_id uuid, occurrence_key text, period_start date, period_end date)';
   drop table if exists pg_temp.replaced_benefit_instances;
   create temporary table pg_temp.replaced_benefit_instances (
     old_instance_id uuid primary key,
