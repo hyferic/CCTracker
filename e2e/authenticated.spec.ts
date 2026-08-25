@@ -192,7 +192,11 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   await expect(page.getByRole('link', { name: editedBenefitName, exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: /^Filter/ }).click();
   await page.getByLabel('Definition status').selectOption('inactive');
-  await expect(page.getByRole('link', { name: editedBenefitName, exact: true })).toBeVisible();
+  const inactiveRows = page.locator('table.benefit-table tbody tr').filter({
+    has: page.getByRole('link', { name: editedBenefitName, exact: true }),
+  });
+  await expect.poll(() => inactiveRows.count()).toBeGreaterThanOrEqual(2);
+  await expect(inactiveRows.first()).toBeVisible();
 
   await page.goto('/#/accounts');
   const activeAccountCard = accountCard(page, editedAccountName);
