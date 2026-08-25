@@ -164,7 +164,10 @@ for each row execute function private.validate_revision_chain();
 create or replace function private.validate_redemption_total()
 returns trigger
 language plpgsql
-security invoker
+-- Like the revision validator, this deferred trigger executes at API commit.
+-- Definer rights let it lock the affected instance without granting browser
+-- roles direct UPDATE privileges on immutable lifecycle tables.
+security definer
 set search_path = ''
 as $$
 declare

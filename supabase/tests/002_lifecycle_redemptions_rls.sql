@@ -71,6 +71,11 @@ select lives_ok(
   'revision integrity can execute at API transaction commit under the authenticated role'
 );
 set constraints validate_revision_chain deferred;
+select lives_ok(
+  'set constraints validate_redemption_total_from_instance immediate',
+  'instance integrity can execute at API transaction commit under the authenticated role'
+);
+set constraints validate_redemption_total_from_instance deferred;
 
 insert into test_context(key, value)
 select 'current_instance', i.id
@@ -213,6 +218,12 @@ with redemption as (
   )).id as id
 )
 insert into test_context(key, value) select 'redemption', id from redemption;
+
+select lives_ok(
+  'set constraints validate_redemption_total_from_redemption immediate',
+  'redemption integrity can execute at API transaction commit under the authenticated role'
+);
+set constraints validate_redemption_total_from_redemption deferred;
 
 select is((
   select d.remaining_quantity from public.benefit_instance_dashboard d

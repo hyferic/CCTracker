@@ -69,6 +69,58 @@ select ok(not has_function_privilege('authenticated', 'public.scheduler_begin_ru
 select ok(has_function_privilege('service_role', 'public.scheduler_begin_run(text)', 'EXECUTE'), 'service role can start scheduler');
 select ok(not has_function_privilege('authenticated', 'public.scheduler_system_health()', 'EXECUTE'), 'system health is service-only');
 
+select ok((
+  select p.prosecdef
+  from pg_proc p
+  where p.oid = 'private.validate_revision_chain()'::regprocedure
+), 'deferred revision validation retains security-definer execution');
+select ok((
+  select exists (
+    select 1
+    from unnest(coalesce(p.proconfig, '{}'::text[])) as config
+    where config in ('search_path=', 'search_path=""')
+  )
+  from pg_proc p
+  where p.oid = 'private.validate_revision_chain()'::regprocedure
+), 'deferred revision validation retains an explicitly empty search path');
+select ok((
+  select not exists (
+    select 1
+    from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) as privilege
+    where privilege.grantee = 0 and privilege.privilege_type = 'EXECUTE'
+  )
+  from pg_proc p
+  where p.oid = 'private.validate_revision_chain()'::regprocedure
+) and not has_function_privilege('anon', 'private.validate_revision_chain()', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'private.validate_revision_chain()', 'EXECUTE'),
+  'public and browser roles cannot invoke deferred revision validation directly');
+
+select ok((
+  select p.prosecdef
+  from pg_proc p
+  where p.oid = 'private.validate_redemption_total()'::regprocedure
+), 'deferred redemption validation retains security-definer execution');
+select ok((
+  select exists (
+    select 1
+    from unnest(coalesce(p.proconfig, '{}'::text[])) as config
+    where config in ('search_path=', 'search_path=""')
+  )
+  from pg_proc p
+  where p.oid = 'private.validate_redemption_total()'::regprocedure
+), 'deferred redemption validation retains an explicitly empty search path');
+select ok((
+  select not exists (
+    select 1
+    from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) as privilege
+    where privilege.grantee = 0 and privilege.privilege_type = 'EXECUTE'
+  )
+  from pg_proc p
+  where p.oid = 'private.validate_redemption_total()'::regprocedure
+) and not has_function_privilege('anon', 'private.validate_redemption_total()', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'private.validate_redemption_total()', 'EXECUTE'),
+  'public and browser roles cannot invoke deferred redemption validation directly');
+
 select is((
   select count(*) from pg_policies
   where schemaname = 'public' and tablename = 'notifications'
