@@ -10,6 +10,7 @@ import {
   type BackupData,
 } from '../domain/portability';
 import { useAsync } from '../hooks/useAsync';
+import { useAuth } from '../features/auth/AuthProvider';
 import { useBusinessDate, useProfile } from '../features/profile/ProfileContext';
 import {
   getExportData,
@@ -21,6 +22,7 @@ import {
 import type { Profile } from '../types';
 
 export function SettingsPage() {
+  const auth = useAuth();
   const { profile, replaceProfile, timezone } = useProfile();
   const { today } = useBusinessDate();
   const result = useAsync(async () => {
@@ -31,6 +33,7 @@ export function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [importData, setImportData] = useState<BackupData | null>(null);
   const [importKind, setImportKind] = useState<'JSON backup' | 'CSV accounts/definitions' | null>(
     null,
@@ -68,6 +71,25 @@ export function SettingsPage() {
       setError(caught instanceof Error ? caught.message : 'Could not save settings.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function registerPasskey() {
+    setPasskeyBusy(true);
+    setError(null);
+    try {
+      await auth.registerPasskey();
+      setMessage(
+        'Passkey added. You can now use it from this iPhone Home Screen app or another compatible device.',
+      );
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Could not add a passkey. Confirm passkeys are enabled in Supabase, then try again.',
+      );
+    } finally {
+      setPasskeyBusy(false);
     }
   }
 
@@ -282,6 +304,28 @@ export function SettingsPage() {
             Save preferences
           </button>
         </form>
+      </section>
+
+      <section className="panel form-section">
+        <div className="form-section-title">
+          <span>⌁</span>
+          <div>
+            <h2>Passkey sign-in</h2>
+            <p>Use Face ID, Touch ID, or your device passcode instead of opening an email link.</p>
+          </div>
+        </div>
+        <p className="muted">
+          Passkeys are saved by your device or password manager. Add one while signed in, then use
+          “Sign in with passkey” from the Home Screen app.
+        </p>
+        <button
+          className="button button--secondary"
+          disabled={busy || passkeyBusy}
+          onClick={() => void registerPasskey()}
+          type="button"
+        >
+          {passkeyBusy ? 'Waiting for device confirmation…' : 'Add passkey to this device'}
+        </button>
       </section>
 
       <section className="panel form-section">

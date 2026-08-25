@@ -349,7 +349,7 @@ code {
 .auth-card form {
   display: grid;
   gap: 1rem;
-  margin-top: 2rem;
+  margin-top: 1rem;
 }
 .privacy-note {
   margin: 1.2rem 0 0;

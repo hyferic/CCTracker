@@ -8,6 +8,8 @@ interface AuthContextValue {
   loading: boolean;
   configurationError: string | null;
   signIn: (email: string) => Promise<void>;
+  signInWithPasskey: () => Promise<void>;
+  registerPasskey: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -48,6 +50,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email,
           options: { shouldCreateUser: false, emailRedirectTo: applicationBaseUrl() },
         });
+        if (error) throw error;
+      },
+      async signInWithPasskey() {
+        if (!supabase) throw new Error(configurationError ?? 'Supabase is not configured.');
+        const { error } = await supabase.auth.signInWithPasskey();
+        if (error) throw error;
+      },
+      async registerPasskey() {
+        if (!supabase) throw new Error(configurationError ?? 'Supabase is not configured.');
+        const { error } = await supabase.auth.registerPasskey();
         if (error) throw error;
       },
       async signOut() {

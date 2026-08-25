@@ -16,6 +16,8 @@ export const supabase: SupabaseClient | null = configurationError
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: false,
+        // Supabase requires an explicit opt-in while its WebAuthn passkey API is experimental.
+        experimental: { passkey: true },
       },
     });
 

@@ -9,7 +9,7 @@ The app never asks for a full card number, CVV, banking password, or transaction
 GitHub Pages serves the compiled React application only. Static Pages cannot persist private data, keep secrets, run scheduled work, or send email. Those responsibilities are deliberately separate:
 
 - React 19, Vite, strict TypeScript, React Router `HashRouter`, Temporal, and Zod provide the responsive frontend.
-- Supabase provides PostgreSQL persistence, magic-link Auth, row-level security, transactional RPCs, Vault, Cron, and one Edge Function.
+- Supabase provides PostgreSQL persistence, magic-link and optional passkey Auth, row-level security, transactional RPCs, Vault, Cron, and one Edge Function.
 - Resend provides benefit email through its API and authentication email through a separate SMTP credential.
 - Supabase Cron calls `process-notifications` at minutes 7, 22, 37, and 52 with a 120-second HTTP timeout covering the processor's 110-second bound. A protected GitHub manual workflow is recovery only.
 - GitHub Actions validates the application, local database, Edge Function, and E2E behavior before Pages deployment. Backend deployment is a separately approved production workflow.
@@ -148,6 +148,7 @@ npm run test:e2e
 
 - Production signup and anonymous login are disabled. The owner is created or invited in Supabase Dashboard.
 - Magic-link login uses PKCE with `shouldCreateUser: false`. The link must be opened in the same browser/device that requested it.
+- Passkeys are an optional, phishing-resistant sign-in method. They are particularly useful for an iPhone Home Screen app because the biometric ceremony and resulting session stay inside that app rather than completing in Safari. Supabase currently labels its passkey API experimental; the client is intentionally pinned at `@supabase/supabase-js` 2.105.0 or newer and opts in explicitly.
 - Deny-by-default grants and owner-scoped RLS protect all browser reads. Invariant-sensitive changes use narrowly granted `SECURITY DEFINER` RPCs with empty search paths and server-side validation.
 - Same-owner composite foreign keys prevent cross-owner relationships. Revision business snapshots and attempted notification payloads are immutable.
 - `process-notifications` is the only `verify_jwt=false` function. It accepts only POST, provides no CORS response, compares a high-entropy scheduler header in constant time, and bounds work.
@@ -157,6 +158,15 @@ npm run test:e2e
 - Logs omit credentials, private notes, recipients, and email bodies. Run the committed secret scanner before every push.
 
 The browser stores a Supabase refresh token. RLS limits its authority, but same-origin XSS could act as the signed-in owner. Keep dependencies current, review Dependabot changes, sign out on shared devices, and revoke suspicious sessions in Supabase Dashboard.
+
+### Enable passkeys for the deployed Pages app
+
+1. In Supabase Dashboard, open **Authentication → Passkeys**, enable passkeys, and use **PerkLedger** as the relying-party display name.
+2. Set **Relying Party ID** to `hyferic.github.io` and **Relying Party Origins** to `https://hyferic.github.io`. The repository path (`/CCTracker/`) is not part of a WebAuthn origin.
+3. Sign in once using the existing email link in Safari, open **Settings → Passkey sign-in**, and choose **Add passkey to this device**. Approve the iPhone Face ID/Touch ID/device-passcode prompt.
+4. Open the Home Screen app and choose **Sign in with passkey**. Future passkey sign-ins and the persisted session remain in the Home Screen app.
+
+Keep email-link login enabled as recovery access. Never change the relying-party ID after creating a passkey: passkeys are cryptographically bound to it and would need to be enrolled again. This setup uses no browser secret and needs no new environment variable. See [Supabase passkey authentication](https://supabase.com/docs/guides/auth/passkeys) for current platform limitations.
 
 ## Notification behavior
 

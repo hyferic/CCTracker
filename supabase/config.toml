@@ -40,6 +40,16 @@ enable_signup = true
 double_confirm_changes = true
 enable_confirmations = true
 
+# Local-only WebAuthn settings. Production relying-party values are configured
+# in Supabase Dashboard because they are bound to the deployed Pages domain.
+[auth.passkey]
+enabled = true
+
+[auth.webauthn]
+rp_display_name = "PerkLedger Local"
+rp_id = "localhost"
+rp_origins = ["http://localhost:5173", "http://127.0.0.1:4173"]
+
 [storage]
 enabled = false
 

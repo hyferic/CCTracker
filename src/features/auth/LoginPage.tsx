@@ -7,6 +7,7 @@ export function LoginPage() {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const passkeysSupported = typeof window !== 'undefined' && 'PublicKeyCredential' in window;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -17,6 +18,22 @@ export function LoginPage() {
       setSent(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not send the sign-in link.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signInWithPasskey() {
+    setBusy(true);
+    setError(null);
+    try {
+      await auth.signInWithPasskey();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Could not sign in with this passkey. Try your email link instead.',
+      );
     } finally {
       setBusy(false);
     }
@@ -88,7 +105,19 @@ export function LoginPage() {
             <>
               <p className="eyebrow">Private dashboard</p>
               <h2>Welcome back</h2>
-              <p className="muted">Use the confirmed owner email configured in Supabase.</p>
+              <p className="muted">
+                Use your saved passkey, or the confirmed owner email configured in Supabase.
+              </p>
+              {passkeysSupported && (
+                <button
+                  className="button button--primary button--wide"
+                  disabled={busy}
+                  onClick={() => void signInWithPasskey()}
+                  type="button"
+                >
+                  {busy ? 'Waiting for passkey…' : 'Sign in with passkey'}
+                </button>
+              )}
               <form onSubmit={(event) => void submit(event)}>
                 <label className="field">
                   <span>Email address</span>
@@ -115,7 +144,8 @@ export function LoginPage() {
                 </button>
               </form>
               <p className="privacy-note">
-                No password is stored by this app. Unknown email addresses cannot create accounts.
+                No password is stored by this app. Set up a passkey from Settings after an
+                email-link sign-in; unknown email addresses cannot create accounts.
               </p>
             </>
           )}

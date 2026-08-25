@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, vi } from 'vitest';
+import { AuthProvider } from '../features/auth/AuthProvider';
 import { ProfileProvider } from '../features/profile/ProfileProvider';
 import { benefitDefinition, benefitInstance, profileFixture } from '../test/fixtures';
 import type { CardCatalogProduct, Profile } from '../types';
@@ -50,14 +51,16 @@ function renderRoute(
   profile = profileFixture(),
 ) {
   return render(
-    <ProfileProvider initialProfile={profile}>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route path={route} element={element} />
-          <Route path="*" element={<p>Navigation complete</p>} />
-        </Routes>
-      </MemoryRouter>
-    </ProfileProvider>,
+    <AuthProvider>
+      <ProfileProvider initialProfile={profile}>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path={route} element={element} />
+            <Route path="*" element={<p>Navigation complete</p>} />
+          </Routes>
+        </MemoryRouter>
+      </ProfileProvider>
+    </AuthProvider>,
   );
 }
 
