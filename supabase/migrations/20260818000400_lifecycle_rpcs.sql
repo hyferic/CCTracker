@@ -801,8 +801,11 @@ begin
   ) into v_through
   from pg_temp.replaced_benefit_instances r;
 
+  -- An edit boundary can be a period_start clipped by effective/revision validity,
+  -- so reconciliation must include the nominal occurrence overlapping that boundary.
+  -- Recurrence re-enable separately requires a genuinely future nominal start.
   v_generated := private.materialize_definition(
-    v_definition.id, v_boundary, v_through, 'regeneration', true, true
+    v_definition.id, v_boundary, v_through, 'regeneration', true, false
   );
 
   for v_old_instance in select * from pg_temp.replaced_benefit_instances loop

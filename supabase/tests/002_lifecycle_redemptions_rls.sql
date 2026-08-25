@@ -165,6 +165,132 @@ select is((select instance_version from public.benefit_instance_dashboard
   where definition_id = (select value from test_context where key = 'editable_one_time')
     and lifecycle_status <> 'void'), 2, 'first-occurrence edit creates a versioned live replacement');
 
+with created as (
+  select public.create_benefit(jsonb_build_object(
+    'name', 'pgTAP editable current monthly occurrence', 'category', 'Testing',
+    'value_kind', 'money', 'benefit_amount', 25, 'currency', 'USD',
+    'effective_date', current_date - 1, 'end_date', current_date + 60,
+    'recurrence_type', 'monthly', 'recurrence_basis', 'anniversary',
+    'anchor_date', current_date - 10, 'interval_months', 1
+  )) as result
+)
+insert into test_context(key, value)
+select 'editable_current_monthly', (result->>'definition_id')::uuid from created;
+insert into test_context(key, value)
+select 'editable_current_monthly_old_instance', i.id
+from public.benefit_instances i
+where i.definition_id = (select value from test_context where key = 'editable_current_monthly')
+  and i.voided_at is null
+  and current_date between i.period_start and i.period_end;
+select lives_ok(format(
+  'select public.record_redemption(%L::uuid, 5, current_date, null, null, null)',
+  (select value from test_context where key = 'editable_current_monthly_old_instance')
+), 'current recurring fixture records usage before a metadata-only revision');
+select lives_ok(format(
+  'select public.edit_benefit(%L::uuid, %L::jsonb, %L, null)',
+  (select value from test_context where key = 'editable_current_monthly'),
+  '{"name":"pgTAP revised current monthly occurrence"}', 'current_and_future'
+), 'current-and-future edit regenerates an in-progress recurring occurrence');
+select ok((
+  select count(*) >= 2 from public.benefit_instances i
+  where i.definition_id = (select value from test_context where key = 'editable_current_monthly')
+    and i.voided_at is null
+), 'current-and-future edit preserves both current and future live periods');
+select is((
+  select count(*) from public.benefit_instances i
+  where i.definition_id = (select value from test_context where key = 'editable_current_monthly')
+    and i.voided_at is not null
+), (
+  select count(*) from public.benefit_instances i
+  where i.definition_id = (select value from test_context where key = 'editable_current_monthly')
+    and i.voided_at is null
+), 'current-and-future edit retains every replaced recurring period as an audit version');
+select ok((
+  select i.instance_version = 2
+    and i.supersedes_instance_id is not null
+    and prior.nominal_start < prior.period_start
+    and i.period_start = prior.period_start
+    and i.period_end = prior.period_end
+    and not i.reactivation_eligible
+    and current_date between i.period_start and i.period_end
+  from public.benefit_instances i
+  join public.benefit_instances prior on prior.id = i.supersedes_instance_id
+  where i.definition_id = (select value from test_context where key = 'editable_current_monthly')
+    and i.voided_at is null
+    and current_date between i.period_start and i.period_end
+), 'current recurring replacement keeps its deterministic clipped boundary, lineage, and notification suppression');
+select ok((
+  select r.redeemed_quantity = 5 and i.voided_at is null and i.instance_version = 2
+  from public.redemptions r
+  join public.benefit_instances i on i.id = r.benefit_instance_id
+  where i.definition_id = (select value from test_context where key = 'editable_current_monthly')
+), 'metadata-only current reconciliation moves existing usage to the live replacement without changing it');
+
+with created as (
+  select public.create_benefit(jsonb_build_object(
+    'name', 'pgTAP editable clipped future occurrence', 'category', 'Testing',
+    'value_kind', 'money', 'benefit_amount', 30, 'currency', 'USD',
+    'effective_date', current_date + 10, 'end_date', current_date + 75,
+    'recurrence_type', 'monthly', 'recurrence_basis', 'anniversary',
+    'anchor_date', current_date, 'interval_months', 1
+  )) as result
+)
+insert into test_context(key, value)
+select 'editable_clipped_future', (result->>'definition_id')::uuid from created;
+insert into test_context(key, value)
+select 'editable_clipped_future_first_instance', i.id
+from public.benefit_instances i
+where i.definition_id = (select value from test_context where key = 'editable_clipped_future')
+  and i.voided_at is null
+order by i.period_start
+limit 1;
+select lives_ok(format(
+  'select public.edit_benefit(%L::uuid, %L::jsonb, %L, null)',
+  (select value from test_context where key = 'editable_clipped_future'),
+  '{"name":"pgTAP revised clipped future occurrence"}', 'future_periods'
+), 'future-only edit regenerates an upcoming occurrence clipped after its nominal start');
+select ok((
+  select old.voided_at is not null
+    and old.nominal_start < old.period_start
+    and replacement.occurrence_key = old.occurrence_key
+    and replacement.instance_version = old.instance_version + 1
+    and replacement.supersedes_instance_id = old.id
+    and replacement.period_start = old.period_start
+    and replacement.period_end = old.period_end
+  from public.benefit_instances old
+  join public.benefit_instances replacement
+    on replacement.supersedes_instance_id = old.id
+   and replacement.voided_at is null
+  where old.id = (select value from test_context where key = 'editable_clipped_future_first_instance')
+), 'future-only clipped replacement preserves occurrence identity, boundaries, and version lineage');
+select is((
+  select count(*) from public.benefit_instances i
+  where i.definition_id = (select value from test_context where key = 'editable_clipped_future')
+    and i.voided_at is null
+    and i.occurrence_key = (
+      select old.occurrence_key from public.benefit_instances old
+      where old.id = (select value from test_context where key = 'editable_clipped_future_first_instance')
+    )
+), 1::bigint, 'future-only reconciliation leaves exactly one live version of the clipped occurrence');
+select ok((
+  select count(*) >= 2
+    and not exists (
+      select 1
+      from (
+        select i.period_end,
+          lead(i.period_start) over (order by i.period_start) as next_period_start
+        from public.benefit_instances i
+        where i.definition_id = (select value from test_context where key = 'editable_clipped_future')
+          and i.voided_at is null
+      ) live_periods
+      where live_periods.next_period_start is not null
+        and live_periods.next_period_start <> live_periods.period_end + 1
+    )
+  from public.benefit_instances i
+  where i.definition_id = (select value from test_context where key = 'editable_clipped_future')
+    and i.voided_at is null
+), 'future-only reconciliation retains contiguous subsequent live periods without a gap');
+
 select lives_ok(format(
   'select public.edit_benefit(%L::uuid, %L::jsonb, %L, null)',
   (select value from test_context where key = 'definition'),

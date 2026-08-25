@@ -48,7 +48,8 @@ insert into public.accounts (
 
 do $$
 declare
-  v_year_start date := make_date(extract(year from current_date)::integer, 1, 1);
+  v_local_today date := (statement_timestamp() at time zone 'America/New_York')::date;
+  v_year_start date := make_date(extract(year from v_local_today)::integer, 1, 1);
 begin
   if not exists (
     select 1 from public.benefit_definitions
@@ -84,8 +85,8 @@ begin
       'currency', 'USD',
       'cashback_percentage', 10,
       'merchant', 'Example Merchant',
-      'effective_date', current_date,
-      'end_date', current_date + 30,
+      'effective_date', v_local_today,
+      'end_date', v_local_today + 30,
       'recurrence_type', 'one_time',
       'recurrence_basis', 'none'
     ));
