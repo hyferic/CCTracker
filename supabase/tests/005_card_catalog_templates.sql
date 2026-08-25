@@ -126,6 +126,14 @@ select is((select available_quantity from public.benefit_instances i
     and i.voided_at is null limit 1),
   15.00::numeric, 'January Uber availability returns to the base amount');
 
+insert into catalog_test_context
+select 'uber_original_revision', r.id
+from public.benefit_definition_revisions r
+join public.benefit_definitions d on d.id = r.definition_id
+where d.account_id = (select value from catalog_test_context where key = 'account')
+  and d.origin_template_stable_key = 'amex-platinum-uber-cash'
+  and r.revision_no = d.current_revision_no;
+
 select lives_ok($sql$
   select public.edit_benefit(
     (select d.id from public.benefit_definitions d
@@ -134,6 +142,22 @@ select lives_ok($sql$
     '{"period_value_rules":[{"calendar_month":12,"available_quantity":36}]}'::jsonb,
     'future_periods', null)
 $sql$, 'a template benefit can be customized through the ordinary edit lifecycle');
+select ok((select r.valid_to is not null and r.closed_at is not null
+  from public.benefit_definition_revisions r
+  where r.id = (select value from catalog_test_context where key = 'uber_original_revision')),
+  'the ordinary edit closes the old immutable revision');
+select is((select count(*) from public.benefit_definition_revisions r
+  join public.benefit_definitions d on d.id = r.definition_id
+  where d.account_id = (select value from catalog_test_context where key = 'account')
+    and d.origin_template_stable_key = 'amex-platinum-uber-cash'
+    and r.valid_to is null and r.closed_at is null),
+  1::bigint, 'the ordinary edit leaves exactly one new open revision');
+select is((select count(*) from public.benefit_definition_revisions r
+  join public.benefit_definitions d on d.id = r.definition_id
+  where d.account_id = (select value from catalog_test_context where key = 'account')
+    and d.origin_template_stable_key = 'amex-platinum-uber-cash'
+    and r.business_snapshot is not null and r.catalog_business_snapshot is not null),
+  2::bigint, 'both generated snapshots remain stored on the closed and open revisions');
 select ok((select d.customized_at is not null from public.benefit_definitions d
   where d.account_id = (select value from catalog_test_context where key = 'account')
     and d.origin_template_stable_key = 'amex-platinum-uber-cash'),
@@ -154,6 +178,16 @@ select is((select (r.catalog_business_snapshot->'period_value_rules'->0->>'avail
   where d.origin_template_stable_key = 'amex-platinum-uber-cash'
   order by r.revision_no desc limit 1), 36::numeric,
   'the new revision snapshots the customized December rule');
+
+reset role;
+select throws_ok(format(
+  'update public.benefit_definition_revisions set notes = coalesce(notes, '''') || %L where id = %L::uuid',
+  ' unauthorized mutation',
+  (select value from catalog_test_context where key = 'uber_original_revision')
+), '55000', 'revision rows are immutable except for one authorized close transition',
+  'direct mutation of a closed revision remains rejected by the history trigger');
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 
 select lives_ok($sql$
   select public.create_account_with_templates(
@@ -321,12 +355,27 @@ select ok((select jsonb_array_length(result->'provenance_warnings') >= 2 from ca
   'the v2 import returns structured account and benefit provenance degradation warnings');
 
 reset role;
-update public.benefit_definitions
-set expiration_reminder_enabled = false, reactivation_reminder_enabled = false
-where user_id = '11111111-1111-4111-8111-111111111111';
 update public.profiles
-set timezone = 'Pacific/Honolulu', reactivation_reminders_enabled = true
+set timezone = 'Pacific/Honolulu', expiration_reminders_enabled = false,
+  reactivation_reminders_enabled = false
 where user_id = '11111111-1111-4111-8111-111111111111';
+
+insert into auth.users (
+  instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+  confirmation_token, email_change, email_change_token_new, recovery_token
+) values (
+  '00000000-0000-0000-0000-000000000000',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'authenticated', 'authenticated', 'catalog-scheduler@example.test', '',
+  statement_timestamp(), '{"provider":"email","providers":["email"]}'::jsonb,
+  '{}'::jsonb, statement_timestamp(), statement_timestamp(), '', '', '', ''
+) on conflict (id) do nothing;
+update public.profiles
+set timezone = 'Pacific/Honolulu', expiration_reminders_enabled = false,
+  reactivation_reminders_enabled = true
+where user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
 select is((private.expand_catalog_template(
     (select t from private.card_catalog_template_versions t
       where t.stable_key = 'amex-platinum-uber-cash' and t.is_current),
@@ -354,13 +403,16 @@ create temporary table catalog_scheduler_claims (
 grant all on catalog_scheduler_claims to service_role;
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+select set_config('request.jwt.claim.sub', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', true);
+select set_config('request.jwt.claims',
+  '{"sub":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","role":"authenticated"}', true);
 with created as (
   select public.create_benefit(jsonb_build_object(
     'name','Issuer-zone reactivation','category','Testing','value_kind','money',
     'benefit_amount',12,'currency','USD',
     'effective_date',(statement_timestamp() at time zone 'Pacific/Kiritimati')::date,
-    'recurrence_type','monthly','recurrence_basis','calendar','interval_months',1,
+    'recurrence_type','monthly','recurrence_basis','anniversary','interval_months',1,
+    'anchor_date',(statement_timestamp() at time zone 'Pacific/Kiritimati')::date - 10,
     'terms_timezone','Pacific/Kiritimati','expiration_reminder_enabled',false,
     'reactivation_reminder_enabled',true
   )) result
@@ -392,6 +444,17 @@ where i.definition_id = (select value from catalog_test_context
   and (statement_timestamp() at time zone r.terms_timezone)::date
     between i.period_start and i.period_end
   and i.voided_at is null;
+select is((select i.generated_source from public.benefit_instances i
+  where i.id = (select value from catalog_test_context where key = 'timezone_reactivation_instance')),
+  'scheduler'::public.instance_source,
+  'the due reactivation fixture is generated by the scheduler rather than creation');
+select ok((select i.nominal_start < i.period_start from public.benefit_instances i
+  where i.id = (select value from catalog_test_context where key = 'timezone_reactivation_instance')),
+  'the fixture distinguishes its nominal recurrence start from its actual validity start');
+select is((select i.period_start from public.benefit_instances i
+  where i.id = (select value from catalog_test_context where key = 'timezone_reactivation_instance')),
+  (statement_timestamp() at time zone 'Pacific/Kiritimati')::date,
+  'the actual period starts on issuer-terms today');
 select ok((select i.reactivation_eligible from public.benefit_instances i
   where i.id = (select value from catalog_test_context where key = 'timezone_reactivation_instance')),
   'a scheduler-generated due period preserves legitimate reactivation eligibility');

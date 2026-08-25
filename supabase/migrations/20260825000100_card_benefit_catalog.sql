@@ -885,9 +885,9 @@ begin
         and i.generated_source = p_source
         and (
           (p_source = 'creation' and
-            i.nominal_start > (statement_timestamp() at time zone r.terms_timezone)::date)
+            i.period_start > (statement_timestamp() at time zone r.terms_timezone)::date)
           or (p_source <> 'creation' and
-            i.nominal_start >= (statement_timestamp() at time zone r.terms_timezone)::date)
+            i.period_start >= (statement_timestamp() at time zone r.terms_timezone)::date)
         )
       )
   from public.benefit_definition_revisions r
@@ -1148,6 +1148,53 @@ alter table public.benefit_definition_revisions
       customized_at, terms_timezone, period_value_rules
     )
   ) stored;
+
+-- Closing an immutable revision legitimately recomputes both stored generated
+-- snapshots. Keep the original lifecycle authorization and close-transition
+-- contract, while excluding only those database-generated values from the
+-- row comparison.
+create or replace function private.protect_revision_history()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if coalesce(current_setting('app.lifecycle_write', true), '') <> 'on' then
+      raise exception 'revision inserts require a lifecycle transaction' using errcode = '42501';
+    end if;
+    return new;
+  end if;
+
+  if tg_op = 'DELETE' then
+    if coalesce(current_setting('app.lifecycle_write', true), '') <> 'on'
+       and pg_trigger_depth() <= 1 then
+      raise exception 'revision history is immutable' using errcode = '42501';
+    end if;
+    return old;
+  end if;
+
+  if coalesce(current_setting('app.lifecycle_write', true), '') <> 'on'
+     or old.valid_to is not null
+     or new.valid_to is null
+     or new.valid_to < old.valid_from - 1
+     or new.closed_at is null
+     or (to_jsonb(new) - array[
+          'valid_to', 'closed_at', 'business_snapshot', 'catalog_business_snapshot'
+        ]) is distinct from
+        (to_jsonb(old) - array[
+          'valid_to', 'closed_at', 'business_snapshot', 'catalog_business_snapshot'
+        ]) then
+    raise exception 'revision rows are immutable except for one authorized close transition'
+      using errcode = '55000';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function private.protect_revision_history() from public, anon, authenticated;
 
 create or replace function private.validate_catalog_revision_chain()
 returns trigger
