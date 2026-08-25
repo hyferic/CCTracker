@@ -298,7 +298,9 @@ select jsonb_build_object(
       'name','Imported duplicate benefit','current_revision_no',1,
       'origin_source','catalog','origin_template_version_id',dining_id,
       'origin_template_stable_key',dining_key,'origin_template_version',dining_version,
-      'origin_template_hash','not-the-installed-hash','origin_verified_on',dining_verified)
+      'origin_template_hash','not-the-installed-hash','origin_verified_on',dining_verified,
+      'customized_at','2026-08-25T12:00:00+00','terms_timezone','Pacific/Kiritimati',
+      'period_value_rules','[{"calendar_month":12,"available_quantity":31}]'::jsonb)
   ),
   'revisions', jsonb_build_array(
     (to_jsonb(r) - array['id','user_id','created_at','catalog_business_snapshot']) || jsonb_build_object(
@@ -324,7 +326,9 @@ select jsonb_build_object(
       'name','Imported duplicate benefit','revision_no',1,'valid_to',null,
       'origin_source','catalog','origin_template_version_id',dining_id,
       'origin_template_stable_key',dining_key,'origin_template_version',dining_version,
-      'origin_template_hash','not-the-installed-hash','origin_verified_on',dining_verified)
+      'origin_template_hash','not-the-installed-hash','origin_verified_on',dining_verified,
+      'customized_at','2026-08-25T18:00:00+00','terms_timezone','Pacific/Honolulu',
+      'period_value_rules','[{"calendar_month":12,"available_quantity":32}]'::jsonb)
   ),
   'instances','[]'::jsonb,
   'redemptions','[]'::jsonb
@@ -337,6 +341,7 @@ insert into catalog_import_result
 select public.import_backup(payload, 'import_as_new', 'suppress_current')
 from catalog_import_payload;
 
+reset role;
 select is((select count(*) from public.accounts where display_name = 'Imported duplicate account'),
   3::bigint, 'duplicate account names import as three source-identity-mapped accounts');
 select is((select count(*) from public.benefit_definitions d join public.accounts a on a.id = d.account_id
@@ -351,10 +356,80 @@ select is((select count(*) from public.benefit_definitions d join public.account
   where d.name = 'Imported duplicate benefit' and d.origin_source = 'manual'
     and a.origin_product_version_id is null),
   1::bigint, 'a mismatched version hash degrades only that source record to manual provenance');
+select is((select count(*)
+  from public.benefit_definitions d
+  join public.benefit_definition_revisions r
+    on r.definition_id = d.id and r.revision_no = d.current_revision_no
+  join public.accounts a on a.id = d.account_id
+  where d.name = 'Imported duplicate benefit'
+    and ((a.origin_product_stable_key = 'amex-platinum-us-consumer'
+      and d.origin_template_stable_key = 'amex-platinum-uber-cash'
+      and r.origin_template_stable_key = 'amex-platinum-uber-cash')
+    or (a.origin_product_stable_key = 'amex-gold-us-consumer'
+      and d.origin_template_stable_key = 'amex-gold-dining'
+      and r.origin_template_stable_key = 'amex-gold-dining'))),
+  2::bigint, 'exact same-name source identities restore the matching account, definition, and revision provenance');
+select ok((select d.origin_source = 'manual'
+    and d.origin_template_version_id is null
+    and d.origin_template_stable_key is null
+    and d.origin_template_version is null
+    and d.origin_template_hash is null
+    and d.origin_verified_on is null
+    and d.customized_at is null
+  from public.benefit_definitions d
+  join public.accounts a on a.id = d.account_id
+  where d.name = 'Imported duplicate benefit' and a.origin_product_version_id is null),
+  'a degraded current definition clears provenance, verification, and customized metadata');
+select ok((select r.origin_source = 'manual'
+    and r.origin_template_version_id is null
+    and r.origin_template_stable_key is null
+    and r.origin_template_version is null
+    and r.origin_template_hash is null
+    and r.origin_verified_on is null
+    and r.customized_at is null
+  from public.benefit_definition_revisions r
+  join public.benefit_definitions d on d.id = r.definition_id
+  join public.accounts a on a.id = d.account_id
+  where d.name = 'Imported duplicate benefit' and a.origin_product_version_id is null
+    and r.revision_no = d.current_revision_no and r.valid_to is null),
+  'the degraded open revision inherits the definition manual/null provenance contract');
+select is((select d.terms_timezone from public.benefit_definitions d
+  join public.accounts a on a.id = d.account_id
+  where d.name = 'Imported duplicate benefit' and a.origin_product_version_id is null),
+  'Pacific/Kiritimati'::text,
+  'the degraded definition retains its legitimate imported issuer timezone');
+select is((select r.terms_timezone from public.benefit_definition_revisions r
+  join public.benefit_definitions d on d.id = r.definition_id
+  join public.accounts a on a.id = d.account_id
+  where d.name = 'Imported duplicate benefit' and a.origin_product_version_id is null
+    and r.revision_no = d.current_revision_no and r.valid_to is null),
+  'Pacific/Kiritimati'::text,
+  'a malformed open-revision timezone cannot override the imported definition');
+select is((select (r.period_value_rules->0->>'available_quantity')::numeric
+  from public.benefit_definition_revisions r
+  join public.benefit_definitions d on d.id = r.definition_id
+  join public.accounts a on a.id = d.account_id
+  where d.name = 'Imported duplicate benefit' and a.origin_product_version_id is null
+    and r.revision_no = d.current_revision_no and r.valid_to is null),
+  31::numeric,
+  'a malformed open-revision month rule cannot override the imported definition rule');
+select is((select r.catalog_business_snapshot
+  from public.benefit_definition_revisions r
+  join public.benefit_definitions d on d.id = r.definition_id
+  join public.accounts a on a.id = d.account_id
+  where d.name = 'Imported duplicate benefit' and a.origin_product_version_id is null
+    and r.revision_no = d.current_revision_no and r.valid_to is null),
+  (select private.make_catalog_revision_snapshot(
+    d.origin_source, d.origin_template_version_id, d.origin_template_stable_key,
+    d.origin_template_version, d.origin_template_hash, d.origin_verified_on,
+    d.customized_at, d.terms_timezone, d.period_value_rules)
+  from public.benefit_definitions d
+  join public.accounts a on a.id = d.account_id
+  where d.name = 'Imported duplicate benefit' and a.origin_product_version_id is null),
+  'the degraded definition and current/open revision have the exact same catalog snapshot');
 select ok((select jsonb_array_length(result->'provenance_warnings') >= 2 from catalog_import_result),
   'the v2 import returns structured account and benefit provenance degradation warnings');
 
-reset role;
 update public.profiles
 set timezone = 'Pacific/Honolulu', expiration_reminders_enabled = false,
   reactivation_reminders_enabled = false

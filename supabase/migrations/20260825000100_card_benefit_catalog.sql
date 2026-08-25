@@ -273,11 +273,6 @@ declare
   v_import_backup jsonb := nullif(current_setting('app.import_catalog_backup', true), '')::jsonb;
   v_import_marker constant text := '__perkledger_import_source__:';
   v_source_id text;
-  v_definition_origin_source text;
-  v_definition_template_id uuid;
-  v_definition_template_key text;
-  v_definition_template_version integer;
-  v_definition_template_hash text;
   v_current_revision_no integer;
 begin
   select d.origin_source, d.origin_template_version_id, d.origin_template_stable_key,
@@ -288,11 +283,6 @@ begin
     new.customized_at, new.terms_timezone, new.period_value_rules
   from public.benefit_definitions d
   where d.id = new.definition_id and d.user_id = new.user_id;
-  v_definition_origin_source := new.origin_source;
-  v_definition_template_id := new.origin_template_version_id;
-  v_definition_template_key := new.origin_template_stable_key;
-  v_definition_template_version := new.origin_template_version;
-  v_definition_template_hash := new.origin_template_hash;
   select d.current_revision_no into v_current_revision_no
   from public.benefit_definitions d where d.id = new.definition_id and d.user_id = new.user_id;
   if v_import_backup is not null then
@@ -311,38 +301,39 @@ begin
     from jsonb_array_elements(coalesce(v_import_backup->'revisions', '[]'::jsonb)) item
     where item->>'id' = v_source_id;
     if v_item is not null then
-      new.origin_source := 'manual';
-      new.origin_template_version_id := null;
-      new.origin_template_stable_key := null;
-      new.origin_template_version := null;
-      new.origin_template_hash := null;
-      new.origin_verified_on := null;
-      new.customized_at := nullif(v_item->>'customized_at', '')::timestamptz;
-      if exists (
-        select 1 from private.card_catalog_template_versions t
-        where t.id = nullif(v_item->>'origin_template_version_id', '')::uuid
-          and t.stable_key = v_item->>'origin_template_stable_key'
-          and t.version = nullif(v_item->>'origin_template_version', '')::integer
-          and t.content_hash = v_item->>'origin_template_hash'
-      ) and (
-        new.revision_no is distinct from v_current_revision_no
-        or (
-          v_definition_origin_source = 'catalog'
-          and v_definition_template_id = nullif(v_item->>'origin_template_version_id', '')::uuid
-          and v_definition_template_key = v_item->>'origin_template_stable_key'
-          and v_definition_template_version = nullif(v_item->>'origin_template_version', '')::integer
-          and v_definition_template_hash = v_item->>'origin_template_hash'
-        )
-      ) then
-        new.origin_source := 'catalog';
-        new.origin_template_version_id := (v_item->>'origin_template_version_id')::uuid;
-        new.origin_template_stable_key := v_item->>'origin_template_stable_key';
-        new.origin_template_version := (v_item->>'origin_template_version')::integer;
-        new.origin_template_hash := v_item->>'origin_template_hash';
-        new.origin_verified_on := nullif(v_item->>'origin_verified_on', '')::date;
+      if new.revision_no = v_current_revision_no and new.valid_to is null then
+        -- The definition import has already authoritatively validated or degraded
+        -- current catalog metadata. Never let a malformed open-revision payload
+        -- diverge from that definition and fail the deferred chain validator.
+        null;
+      else
+        new.origin_source := 'manual';
+        new.origin_template_version_id := null;
+        new.origin_template_stable_key := null;
+        new.origin_template_version := null;
+        new.origin_template_hash := null;
+        new.origin_verified_on := null;
+        new.customized_at := null;
+        if exists (
+          select 1 from private.card_catalog_template_versions t
+          where t.id = nullif(v_item->>'origin_template_version_id', '')::uuid
+            and t.stable_key = v_item->>'origin_template_stable_key'
+            and t.version = nullif(v_item->>'origin_template_version', '')::integer
+            and t.content_hash = v_item->>'origin_template_hash'
+        ) then
+          new.origin_source := 'catalog';
+          new.origin_template_version_id := (v_item->>'origin_template_version_id')::uuid;
+          new.origin_template_stable_key := v_item->>'origin_template_stable_key';
+          new.origin_template_version := (v_item->>'origin_template_version')::integer;
+          new.origin_template_hash := v_item->>'origin_template_hash';
+          new.origin_verified_on := nullif(v_item->>'origin_verified_on', '')::date;
+          new.customized_at := nullif(v_item->>'customized_at', '')::timestamptz;
+        end if;
+        -- Historical business behavior remains portable even when catalog
+        -- provenance cannot be trusted on this installation.
+        new.terms_timezone := coalesce(nullif(v_item->>'terms_timezone', ''), new.terms_timezone);
+        new.period_value_rules := coalesce(v_item->'period_value_rules', new.period_value_rules);
       end if;
-      new.terms_timezone := coalesce(nullif(v_item->>'terms_timezone', ''), new.terms_timezone);
-      new.period_value_rules := coalesce(v_item->'period_value_rules', new.period_value_rules);
     end if;
   end if;
   perform private.assert_period_value_rules(new.period_value_rules, new.value_kind,
