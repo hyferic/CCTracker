@@ -27,7 +27,7 @@ const categories = [
   'Other',
 ];
 
-function emptyBenefit(today: string): BenefitInput {
+function emptyBenefit(today: string, timezone: string): BenefitInput {
   return {
     account_id: null,
     name: '',
@@ -59,6 +59,8 @@ function emptyBenefit(today: string): BenefitInput {
     interval_months: null,
     expiration_email_enabled: true,
     reactivation_email_enabled: true,
+    terms_timezone: timezone,
+    period_value_rules: [],
   };
 }
 
@@ -94,6 +96,8 @@ function fromDefinition(definition: BenefitDefinition): BenefitInput {
     interval_months: definition.interval_months,
     expiration_email_enabled: definition.expiration_email_enabled,
     reactivation_email_enabled: definition.reactivation_email_enabled,
+    terms_timezone: definition.terms_timezone,
+    period_value_rules: definition.period_value_rules,
   };
 }
 
@@ -104,12 +108,12 @@ function numeric(value: string) {
 export function BenefitFormPage() {
   const { definitionId } = useParams();
   const navigate = useNavigate();
-  const { today } = useBusinessDate();
+  const { today, timezone } = useBusinessDate();
   const data = useAsync(async () => {
     const [accounts, definitions] = await Promise.all([listAccounts(false), listDefinitions()]);
     return { accounts, definition: definitions.find((item) => item.id === definitionId) ?? null };
   }, [definitionId]);
-  const [form, setForm] = useState<BenefitInput>(() => emptyBenefit(today));
+  const [form, setForm] = useState<BenefitInput>(() => emptyBenefit(today, timezone));
   const [hydratedDefinitionId, setHydratedDefinitionId] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState('');
   const [editScope, setEditScope] = useState<Exclude<EditScope, 'this_period'>>('future');
@@ -251,6 +255,19 @@ export function BenefitFormPage() {
               <p>Historical periods are never rewritten.</p>
             </div>
           </div>
+          {data.data?.definition?.origin_template_version_id && (
+            <div className="info-box">
+              <strong>Created from the standard card catalog</strong>
+              <p>
+                Template {data.data.definition.origin_template_stable_key} version{' '}
+                {data.data.definition.origin_template_version} · verified{' '}
+                {data.data.definition.origin_verified_on ?? 'date unavailable'}.
+                {data.data.definition.customized_at
+                  ? ' This benefit has been customized; its catalog sibling benefits are unaffected.'
+                  : ' Editing creates your own revision and never changes the catalog or sibling benefits.'}
+              </p>
+            </div>
+          )}
           <div className="scope-options">
             <label
               className={`choice-card ${editScope === 'future' ? 'choice-card--selected' : ''}`}
@@ -785,8 +802,113 @@ export function BenefitFormPage() {
               <small>Sent on the local start date of a genuinely new recurring period.</small>
             </span>
           </label>
+          <label className="field field--wide">
+            <span>Terms timezone</span>
+            <input
+              required
+              value={form.terms_timezone}
+              onChange={(event) => setForm({ ...form, terms_timezone: event.target.value })}
+              placeholder="America/New_York"
+            />
+            <small>
+              Period boundaries and statuses use this explicit IANA timezone. Email processing still
+              follows your profile schedule.
+            </small>
+          </label>
         </div>
       </section>
+
+      <details className="panel form-section" open={form.period_value_rules.length > 0}>
+        <summary>Advanced period-specific values</summary>
+        <p className="muted">
+          Optional month overrides for recurring fixed-money calendar benefits—for example $35 in
+          December and the normal amount in other months.
+        </p>
+        <div className="form-stack">
+          {form.period_value_rules.map((rule, index) => (
+            <div className="form-grid" key={`${rule.calendar_month}-${index}`}>
+              <label className="field">
+                <span>Calendar month</span>
+                <select
+                  value={rule.calendar_month}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      period_value_rules: form.period_value_rules.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, calendar_month: Number(event.target.value) }
+                          : item,
+                      ),
+                    })
+                  }
+                >
+                  {Array.from({ length: 12 }, (_, month) => (
+                    <option value={month + 1} key={month + 1}>
+                      {new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(
+                        new Date(Date.UTC(2024, month, 1)),
+                      )}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Available value</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={rule.available_quantity}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      period_value_rules: form.period_value_rules.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, available_quantity: Number(event.target.value) }
+                          : item,
+                      ),
+                    })
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="text-button text-button--danger"
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    period_value_rules: form.period_value_rules.filter(
+                      (_, itemIndex) => itemIndex !== index,
+                    ),
+                  })
+                }
+              >
+                Remove override
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="button button--secondary button--small"
+            disabled={form.period_value_rules.length >= 12}
+            onClick={() => {
+              const used = new Set(form.period_value_rules.map((rule) => rule.calendar_month));
+              const month = Array.from({ length: 12 }, (_, index) => index + 1).find(
+                (candidate) => !used.has(candidate),
+              );
+              if (month)
+                setForm({
+                  ...form,
+                  period_value_rules: [
+                    ...form.period_value_rules,
+                    { calendar_month: month, available_quantity: form.amount ?? 1 },
+                  ],
+                });
+            }}
+          >
+            Add month override
+          </button>
+        </div>
+      </details>
 
       {!definitionId && (
         <details className="panel form-section">

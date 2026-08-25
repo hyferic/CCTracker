@@ -39,6 +39,18 @@ export const benefitInputSchema = z
     interval_months: z.number().int().min(1).max(120).nullable(),
     expiration_email_enabled: z.boolean(),
     reactivation_email_enabled: z.boolean(),
+    terms_timezone: z.string().trim().min(1).max(100).default('America/New_York'),
+    period_value_rules: z
+      .array(
+        z
+          .object({
+            calendar_month: z.number().int().min(1).max(12),
+            available_quantity: z.number().positive().multipleOf(0.01),
+          })
+          .strict(),
+      )
+      .max(12)
+      .default([]),
   })
   .superRefine((value, context) => {
     if (value.end_date && value.end_date < value.effective_date)
@@ -165,6 +177,26 @@ export const benefitInputSchema = z
         path: ['enrollment_deadline'],
         message: 'Enrollment deadline requires enrollment to be enabled.',
       });
+    if (
+      new Set(value.period_value_rules.map((rule) => rule.calendar_month)).size !==
+      value.period_value_rules.length
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['period_value_rules'],
+        message: 'Each calendar month can have only one period-specific value.',
+      });
+    if (
+      value.period_value_rules.length > 0 &&
+      (value.value_kind !== 'money' ||
+        !value.recurrence_enabled ||
+        value.recurrence_basis !== 'calendar')
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['period_value_rules'],
+        message: 'Period-specific values require a recurring fixed-money calendar benefit.',
+      });
   });
 
 export const accountInputSchema = z
@@ -183,6 +215,7 @@ export const accountInputSchema = z
       .regex(/^[A-Z]{3}$/)
       .nullable(),
     renewal_date: z.string().date().nullable(),
+    benefit_anniversary_date: z.string().date().nullable().default(null),
     notes: z.string().trim().max(4000).nullable(),
     is_active: z.boolean(),
   })

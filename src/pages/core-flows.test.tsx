@@ -4,15 +4,19 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { ProfileProvider } from '../features/profile/ProfileProvider';
 import { benefitDefinition, benefitInstance, profileFixture } from '../test/fixtures';
-import type { Profile } from '../types';
+import type { CardCatalogProduct, Profile } from '../types';
 import { BenefitFormPage } from './BenefitFormPage';
 import { BenefitsPage } from './BenefitsPage';
+import { AccountsPage } from './AccountsPage';
 import { DashboardPage } from './DashboardPage';
 import { InstancePage } from './InstancePage';
 import { SettingsPage } from './SettingsPage';
 
 const api = vi.hoisted(() => ({
+  createAccount: vi.fn(),
+  createAccountWithTemplates: vi.fn(),
   createBenefit: vi.fn(),
+  deleteAccount: vi.fn(),
   deleteBenefitDraft: vi.fn(),
   deleteRedemption: vi.fn(),
   editBenefit: vi.fn(),
@@ -21,6 +25,7 @@ const api = vi.hoisted(() => ({
   getExportData: vi.fn(),
   importBackup: vi.fn(),
   listAccounts: vi.fn(),
+  listCardCatalog: vi.fn(),
   listDefinitions: vi.fn(),
   listInstances: vi.fn(),
   listNotifications: vi.fn(),
@@ -32,6 +37,7 @@ const api = vi.hoisted(() => ({
   schedulerHealth: vi.fn(),
   setBenefitActive: vi.fn(),
   setRecurrenceEnabled: vi.fn(),
+  updateAccount: vi.fn(),
   updateProfile: vi.fn(),
 }));
 
@@ -55,6 +61,25 @@ function renderRoute(
   );
 }
 
+function catalogProduct(overrides: Partial<CardCatalogProduct> = {}): CardCatalogProduct {
+  return {
+    product_version_id: '10000000-0000-4000-8000-000000000004',
+    product_stable_key: 'chase-sapphire-reserve',
+    product_version: 1,
+    issuer: 'Chase',
+    product_name: 'Sapphire Reserve',
+    aliases: ['CSR'],
+    market_scope: 'US consumer',
+    annual_fee: 795,
+    annual_fee_currency: 'USD',
+    official_url: 'https://creditcards.chase.com/rewards-credit-cards/sapphire/reserve',
+    verified_on: '2026-08-25',
+    age_days: 0,
+    templates: [],
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal(
@@ -62,6 +87,7 @@ beforeEach(() => {
     vi.fn(() => true),
   );
   api.listAccounts.mockResolvedValue([]);
+  api.listCardCatalog.mockResolvedValue([]);
   api.listDefinitions.mockResolvedValue([]);
   api.listInstances.mockResolvedValue([]);
   api.listNotifications.mockResolvedValue([]);
@@ -78,6 +104,12 @@ beforeEach(() => {
     definition_id: '22222222-2222-4222-8222-222222222222',
     current_instance_id: null,
   });
+  api.createAccountWithTemplates.mockResolvedValue({
+    account_id: '44444444-4444-4444-8444-444444444444',
+    definition_ids: ['22222222-2222-4222-8222-222222222222'],
+    benefits_created: 1,
+    catalog_verified_on: '2026-08-25',
+  });
   api.editBenefit.mockResolvedValue({ revision_id: '33333333-3333-4333-8333-333333333333' });
   api.updateProfile.mockImplementation((input: Partial<Profile>) =>
     Promise.resolve({ ...profileFixture(), ...input }),
@@ -87,6 +119,176 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('authenticated core flows', () => {
+  it('creates an exact catalog product bundle while allowing benefit deselection', async () => {
+    const user = userEvent.setup();
+    api.listCardCatalog.mockResolvedValue([
+      {
+        product_version_id: '10000000-0000-4000-8000-000000000004',
+        product_stable_key: 'chase-sapphire-reserve',
+        product_version: 1,
+        issuer: 'Chase',
+        product_name: 'Sapphire Reserve',
+        aliases: ['CSR'],
+        market_scope: 'US consumer',
+        annual_fee: 795,
+        annual_fee_currency: 'USD',
+        official_url: 'https://creditcards.chase.com/rewards-credit-cards/sapphire/reserve',
+        verified_on: '2026-08-25',
+        age_days: 0,
+        templates: [
+          {
+            template_version_id: '20000000-0000-4000-8000-000000000011',
+            template_stable_key: 'chase-csr-travel',
+            template_version: 1,
+            template_name: 'Annual Travel Credit',
+            summary: '$300 each account benefit year.',
+            payload: { enrollment_required: false, eligibility_notes: 'Issuer terms apply.' },
+            date_strategy: 'account_anniversary',
+            fixed_start: null,
+            fixed_end: null,
+            setup_field: 'benefit_anniversary_date',
+            terms_timezone: 'America/New_York',
+            default_selected: true,
+            confidence: 'high',
+            official_url: 'https://creditcards.chase.com/rewards-credit-cards/sapphire/reserve',
+            verified_on: '2026-08-25',
+            age_days: 0,
+          },
+        ],
+      },
+    ]);
+    renderRoute('/accounts', '/accounts', <AccountsPage />);
+
+    await user.click(await screen.findByRole('button', { name: '+ Add account' }));
+    await user.click(screen.getByRole('button', { name: /Chase Sapphire Reserve/i }));
+    await user.click(screen.getByRole('button', { name: 'Continue to details' }));
+    fireEvent.change(screen.getByLabelText(/Benefit anniversary\/reset date/), {
+      target: { value: '2026-08-15' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Preview benefits' }));
+    const source = screen.getByRole('link', { name: /Issuer source/i });
+    expect(source).toHaveAttribute('target', '_blank');
+    expect(source).toHaveAttribute('rel', 'noopener noreferrer');
+    await user.click(screen.getByRole('button', { name: 'Create account and 1 benefit' }));
+
+    await waitFor(() =>
+      expect(api.createAccountWithTemplates).toHaveBeenCalledWith(
+        expect.objectContaining({
+          productVersionId: '10000000-0000-4000-8000-000000000004',
+          selections: [{ template_version_id: '20000000-0000-4000-8000-000000000011' }],
+          account: expect.objectContaining({ benefit_anniversary_date: '2026-08-15' }),
+        }),
+      ),
+    );
+  });
+
+  it('keeps the custom-account and manual-benefit paths available during catalog outage', async () => {
+    const user = userEvent.setup();
+    api.listCardCatalog.mockRejectedValue(new Error('catalog offline'));
+    renderRoute('/accounts', '/accounts', <AccountsPage />);
+    expect(screen.getByRole('link', { name: '+ Add custom benefit' })).toHaveAttribute(
+      'href',
+      '/benefits/new',
+    );
+    await user.click(screen.getByRole('button', { name: '+ Add account' }));
+    expect(await screen.findByText(/catalog is unavailable/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Custom card, service, or portal/i }));
+    await user.click(screen.getByRole('button', { name: 'Continue to details' }));
+    await user.type(screen.getByLabelText('Display name'), 'Side offer account');
+    await user.type(screen.getByLabelText('Issuer/provider'), 'Local Bank');
+    await user.type(screen.getByLabelText('Card/service name'), 'Custom Card');
+    await user.click(screen.getByRole('button', { name: 'Save account' }));
+    await waitFor(() => expect(api.createAccount).toHaveBeenCalled());
+    expect(api.createAccountWithTemplates).not.toHaveBeenCalled();
+  });
+
+  it('requires stale-catalog acknowledgement and surfaces a server catalog race', async () => {
+    const user = userEvent.setup();
+    api.listCardCatalog.mockResolvedValue([catalogProduct({ age_days: 181 })]);
+    api.createAccountWithTemplates.mockRejectedValueOnce(
+      new Error('CATALOG_CHANGED: selected product version is no longer current'),
+    );
+    renderRoute('/accounts', '/accounts', <AccountsPage />);
+
+    await user.click(await screen.findByRole('button', { name: '+ Add account' }));
+    await user.click(screen.getByRole('button', { name: /Chase Sapphire Reserve/i }));
+    await user.click(screen.getByRole('button', { name: 'Continue to details' }));
+    await user.click(screen.getByRole('button', { name: 'Preview benefits' }));
+    const create = screen.getByRole('button', { name: 'Create account and 0 benefits' });
+    expect(create).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: /I reviewed current issuer terms/i }));
+    expect(create).toBeEnabled();
+    await user.click(create);
+
+    await waitFor(() =>
+      expect(api.createAccountWithTemplates).toHaveBeenCalledWith(
+        expect.objectContaining({ staleCatalogAcknowledged: true }),
+      ),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('CATALOG_CHANGED');
+  });
+
+  it('blocks a selected contingent template until its qualification setup is complete', async () => {
+    const user = userEvent.setup();
+    api.listCardCatalog.mockResolvedValue([
+      catalogProduct({
+        product_version_id: '10000000-0000-4000-8000-000000000007',
+        product_stable_key: 'usbank-altitude-go',
+        issuer: 'U.S. Bank',
+        product_name: 'Altitude Go',
+        annual_fee: 0,
+        templates: [
+          {
+            template_version_id: '20000000-0000-4000-8000-00000000001e',
+            template_stable_key: 'usbank-go-streaming',
+            template_version: 1,
+            template_name: 'Expected Streaming Qualification Credit',
+            summary: 'Expected $15 after 11 qualifying months.',
+            payload: { eligibility_notes: 'Confirm current issuer terms.' },
+            date_strategy: 'qualification_cycle',
+            fixed_start: null,
+            fixed_end: null,
+            setup_field: 'first_qualifying_month',
+            terms_timezone: 'America/New_York',
+            default_selected: false,
+            confidence: 'contingent',
+            official_url:
+              'https://www.usbank.com/credit-cards/altitude-go-visa-signature-credit-card.html',
+            verified_on: '2026-08-25',
+            age_days: 0,
+          },
+        ],
+      }),
+    ]);
+    renderRoute('/accounts', '/accounts', <AccountsPage />);
+
+    await user.click(await screen.findByRole('button', { name: '+ Add account' }));
+    await user.click(screen.getByRole('button', { name: /U\.S\. Bank Altitude Go/i }));
+    await user.click(screen.getByRole('button', { name: 'Continue to details' }));
+    await user.click(screen.getByRole('button', { name: 'Preview benefits' }));
+    await user.click(
+      screen.getByRole('checkbox', { name: /Expected Streaming Qualification Credit/i }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Create account and 1 benefit' }));
+    expect(api.createAccountWithTemplates).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText(/First qualifying month/), {
+      target: { value: '2026-08' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Create account and 1 benefit' }));
+    await waitFor(() =>
+      expect(api.createAccountWithTemplates).toHaveBeenCalledWith(
+        expect.objectContaining({
+          selections: [
+            {
+              template_version_id: '20000000-0000-4000-8000-00000000001e',
+              setup: { first_qualifying_month: '2026-08' },
+            },
+          ],
+        }),
+      ),
+    );
+  });
+
   it('creates a fixed benefit with the validated form payload', async () => {
     const user = userEvent.setup();
     renderRoute('/benefits/new', '/benefits/new', <BenefitFormPage />);

@@ -1,6 +1,8 @@
 import type { PostgrestError } from '@supabase/supabase-js';
 import type {
   Account,
+  CardCatalogProduct,
+  CardCatalogTemplate,
   BenefitDefinition,
   BenefitInput,
   BenefitInstance,
@@ -9,6 +11,7 @@ import type {
   Profile,
   Redemption,
   SchedulerHealth,
+  TemplateSelection,
 } from '../types';
 import { requireSupabase } from './supabase';
 
@@ -53,7 +56,17 @@ export async function listAccounts(includeInactive = true): Promise<Account[]> {
   return (data ?? []).map(mapAccount);
 }
 
-export type AccountWrite = Omit<Account, 'id' | 'user_id' | 'created_at' | 'updated_at'>;
+export type AccountWrite = Omit<
+  Account,
+  | 'id'
+  | 'user_id'
+  | 'created_at'
+  | 'updated_at'
+  | 'origin_product_version_id'
+  | 'origin_product_stable_key'
+  | 'origin_product_version'
+  | 'origin_product_hash'
+>;
 
 export async function createAccount(input: AccountWrite): Promise<Account> {
   const user = await requireSupabase().auth.getUser();
@@ -81,6 +94,81 @@ export async function updateAccount(id: string, input: AccountWrite): Promise<Ac
 function accountPayload(input: AccountWrite) {
   const { is_active, ...rest } = input;
   return { ...rest, active: is_active };
+}
+
+export async function listCardCatalog(): Promise<CardCatalogProduct[]> {
+  const { data, error } = await requireSupabase()
+    .from('card_catalog_current')
+    .select('*')
+    .order('issuer')
+    .order('product_name')
+    .order('template_name');
+  fail(error);
+  const products = new Map<string, CardCatalogProduct>();
+  for (const raw of data ?? []) {
+    const row = raw as Record<string, unknown>;
+    const productId = row.product_version_id as string;
+    let product = products.get(productId);
+    if (!product) {
+      product = {
+        product_version_id: productId,
+        product_stable_key: row.product_stable_key as string,
+        product_version: Number(row.product_version),
+        issuer: row.issuer as string,
+        product_name: row.product_name as string,
+        aliases: Array.isArray(row.aliases) ? (row.aliases as string[]) : [],
+        market_scope: row.market_scope as string,
+        annual_fee: row.annual_fee === null ? null : Number(row.annual_fee),
+        annual_fee_currency: row.annual_fee_currency as string | null,
+        official_url: row.product_official_url as string,
+        verified_on: row.product_verified_on as string,
+        age_days: Number(row.age_days),
+        templates: [],
+      };
+      products.set(productId, product);
+    }
+    product.templates.push({
+      template_version_id: row.template_version_id as string,
+      template_stable_key: row.template_stable_key as string,
+      template_version: Number(row.template_version),
+      template_name: row.template_name as string,
+      summary: row.summary as string,
+      payload: (row.payload ?? {}) as Record<string, unknown>,
+      date_strategy: row.date_strategy as CardCatalogTemplate['date_strategy'],
+      fixed_start: row.fixed_start as string | null,
+      fixed_end: row.fixed_end as string | null,
+      setup_field: row.setup_field as CardCatalogTemplate['setup_field'],
+      terms_timezone: row.terms_timezone as string,
+      default_selected: Boolean(row.default_selected),
+      confidence: row.confidence as CardCatalogTemplate['confidence'],
+      official_url: row.template_official_url as string,
+      verified_on: row.template_verified_on as string,
+      age_days: Number(row.age_days),
+    });
+    product.age_days = Math.max(product.age_days, Number(row.age_days));
+  }
+  return [...products.values()];
+}
+
+export async function createAccountWithTemplates(input: {
+  account: AccountWrite;
+  productVersionId: string | null;
+  selections: TemplateSelection[];
+  staleCatalogAcknowledged: boolean;
+}) {
+  const { data, error } = await requireSupabase().rpc('create_account_with_templates', {
+    p_account: accountPayload(input.account),
+    p_product_version_id: input.productVersionId,
+    p_template_selections: input.selections,
+    p_stale_catalog_acknowledged: input.staleCatalogAcknowledged,
+  });
+  fail(error);
+  return data as {
+    account_id: string;
+    definition_ids: string[];
+    benefits_created: number;
+    catalog_verified_on: string | null;
+  };
 }
 
 function mapAccount(row: unknown): Account {
@@ -152,6 +240,8 @@ function benefitPayload(input: BenefitInput) {
     interval_months: input.interval_months,
     expiration_reminder_enabled: input.expiration_email_enabled,
     reactivation_reminder_enabled: input.reactivation_email_enabled,
+    terms_timezone: input.terms_timezone,
+    period_value_rules: input.period_value_rules,
   };
 }
 
@@ -412,11 +502,14 @@ export async function importBackup(
     p_current_notification_policy: notificationPolicy,
   });
   fail(error);
-  const result = data as Record<string, number>;
+  const result = data as Record<string, unknown>;
   return {
-    accounts: result.accounts_imported ?? 0,
-    definitions: result.definitions_imported ?? 0,
-    instances: result.instances_imported ?? 0,
-    redemptions: result.redemptions_imported ?? 0,
+    accounts: Number(result.accounts_imported ?? 0),
+    definitions: Number(result.definitions_imported ?? 0),
+    instances: Number(result.instances_imported ?? 0),
+    redemptions: Number(result.redemptions_imported ?? 0),
+    warnings: Array.isArray(result.provenance_warnings)
+      ? (result.provenance_warnings as string[])
+      : [],
   };
 }

@@ -33,9 +33,7 @@ describe('portable backup validation', () => {
 
   it('rejects malformed, oversized, and unsupported backups', () => {
     expect(() => parseBackup('{')).toThrow('not valid JSON');
-    expect(() => parseBackup(JSON.stringify({ schema_version: 2 }))).toThrow(
-      'Invalid literal value',
-    );
+    expect(() => parseBackup(JSON.stringify({ schema_version: 3 }))).toThrow();
     expect(() => parseBackup(' '.repeat(MAX_IMPORT_BYTES + 1))).toThrow('5 MiB');
   });
 

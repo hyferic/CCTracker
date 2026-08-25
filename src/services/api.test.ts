@@ -43,6 +43,8 @@ const benefit: BenefitInput = {
   interval_months: null,
   expiration_email_enabled: true,
   reactivation_email_enabled: true,
+  terms_timezone: 'America/New_York',
+  period_value_rules: [],
 };
 
 beforeEach(() => vi.clearAllMocks());

@@ -152,6 +152,13 @@ export function BenefitsPage() {
                         : 'One-time'}{' '}
                       · revision {definition.current_revision_no}
                     </p>
+                    {definition.origin_template_version_id && (
+                      <p className="muted">
+                        Standard catalog template v{definition.origin_template_version}
+                        {definition.customized_at ? ' · customized' : ' · unchanged'} · terms zone{' '}
+                        {definition.terms_timezone}
+                      </p>
+                    )}
                     {definition.description && <p>{definition.description}</p>}
                   </div>
                 </div>

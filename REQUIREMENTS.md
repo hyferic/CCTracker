@@ -81,7 +81,7 @@
 | Reminders run with browser/computer closed | Supabase `pg_cron` calls the deployed Edge Function | migration `20260818000700_grants_and_cron.sql`; live Cron check in `DEPLOYMENT.md` §8 | PASS |
 | Seven-day expiration email for incomplete active periods | scheduler preparation/claim RPCs, Edge processor, Resend transport | expiration selection/payload/dedup pgTAP; Edge email/processor tests | PASS |
 | Catch-up for a benefit entered with fewer than seven days left | due-date eligibility and active-period claim predicate | scheduler SQL audit; live short-window scenario | PASS |
-| Available-again email for genuinely new recurring periods | reactivation eligibility, local start instant, available-again payload | explicit create/prepare-twice/claim/accept/no-reclaim assertions in `003_scheduler_notifications.sql` | PASS |
+| Available-again email for genuinely new recurring periods | reactivation eligibility survives the due boundary through claim/provider acceptance; available-again payload | existing notification suite plus no-manual-eligibility prepare/claim/accept/no-reclaim regression in `005_card_catalog_templates.sql` | PASS |
 | Correct email fields and protected provider key | byte-frozen subject/text/HTML includes benefit/account/value/period/notes as applicable | pgTAP payload checks; `supabase/functions/_shared/email_test.ts` | PASS |
 | One logical notification and stable provider idempotency | unique instance/type and idempotency keys; immutable frozen body/hash | duplicate prepare/retry/consumed-claim/reactivation dedup SQL; Edge retry tests | PASS |
 | Duplicate jobs, leases, bounded retries, slow providers, and failure isolation | `FOR UPDATE SKIP LOCKED`, claim tokens/leases, stable key, transport/runtime bounds, bounded batches/concurrency | lease-expiry/token/idempotency pgTAP; duplicate/lease/caller-abort processor/handler tests; provider-timeout email test | PASS |
@@ -99,8 +99,8 @@
 | Malformed import cannot partially corrupt data | 5 MiB/5,000-row bounds, client and database validation, transaction rollback, notification authority ignored | `src/domain/csvImport.test.ts`; malformed/reference/oversize/rollback pgTAP and portability unit tests | PASS |
 | GitHub repository hygiene and no committed secrets | `.gitignore`, `.env.example`, lockfile, Dependabot, secret scanner | `scripts/check-secrets.mjs`; CI application job | PASS |
 | GitHub CI runs formatting, lint, typecheck, unit, database, Edge, E2E, build, audit, and secret gates | `.github/workflows/ci.yml` | workflow definition; final QA must run/observe a clean execution | PASS |
-| Repository-path-safe GitHub Pages deployment | Vite base, HashRouter, exact tested-commit Pages workflow | production build; `scripts/smoke-pages.mjs`; live Pages check | PASS |
-| Protected database/Edge deployment | exact-ref confirmation, production environment, lint/dry-run/push/function health | `.github/workflows/deploy-backend.yml`; deployment checklist §8 | PASS |
+| Repository-path-safe GitHub Pages deployment | Vite base, HashRouter, Pages runs only from a successful backend workflow's exact tested/deployed `head_sha` | production build; `scripts/check-release-order.mjs`; `scripts/smoke-pages.mjs`; live Pages check | PASS |
+| Protected database/Edge deployment | exact-ref confirmation, exact-commit successful-CI gate, production environment, lint/dry-run/push/function health | `.github/workflows/deploy-backend.yml`; deployment checklist §8 | PASS |
 | Vault-backed Cron and protected manual recovery | named Vault secrets, Cron installer, recovery dispatch confirmation/concurrency | migration `00700`; backend/recovery workflow smoke; live Cron inspection | PASS |
 | Cron caller timeout covers bounded processor | `pg_net` timeout 120 seconds; processor maximum 110 seconds | schema pgTAP source assertion; Edge slow-provider/runtime tests; deployment inspection | PASS |
 | Authenticated frontend↔Supabase contract coverage | CI derives real local URL/key, signs in seeded owner, and runs account/benefit/redemption/filter/import-rollback flow; auth shell remains Chromium/WebKit | `e2e/authenticated.spec.ts`; `e2e/auth-shell.spec.ts`; `.github/workflows/ci.yml` | PASS |
@@ -108,6 +108,18 @@
 | Exact variables, secret sources/destinations, and browser safety documented | `.env.example`; configuration matrix | `DEPLOYMENT.md` configuration audit | PASS |
 | Comprehensive setup/update/security/cost/troubleshooting documentation | `README.md`, `DEPLOYMENT.md`, `PLAN.md` | Agent 4 documentation audit | PASS |
 | Concrete final deployment and production validation checklist | sequential GitHub/Supabase/Resend/Auth/Cron/Pages/Edge/test-email steps | `DEPLOYMENT.md` §§1–12 | PASS |
+
+## Standard-card catalog amendment
+
+| Requirement | Implementation | Test/evidence | Status |
+| --- | --- | --- | --- |
+| Exact product selection and automatic benefits | private versioned catalog, `card_catalog_current`, atomic `create_account_with_templates`; three-step Accounts UI | `005_card_catalog_templates.sql`; Accounts component flow | PASS |
+| Current issuer-neutral starter catalog | migration-managed Amex/Chase/Capital One/U.S. Bank/BoA/Citi records; current Oura, retired Saks, split DoorDash | catalog SQL assertions and source/verified metadata | PASS |
+| Anniversary, fixed, calendar, and contingent dates | separate account benefit anniversary, template date strategies, revision-scoped terms timezone | SQL anniversary/U.S. Bank and Kiritimati-vs-Honolulu date-boundary/claim assertions; recurrence suite | PASS |
+| Period-specific value rules | strict server/client grammar and materialization override | malformed rules plus December $35/January $15 pgTAP; validation tests | PASS |
+| Provenance and no silent synchronization | exact UUID/key/version/hash snapshots; source-ID-mapped v2 restore; customized marker; immutable origin | duplicate-name exact/degraded import, injection, edit-history, snapshot, and security SQL tests; Benefits UI | PASS |
+| Custom/manual benefits remain available | Custom account fallback and `/benefits/new`; same manual lifecycle RPC | catalog-outage component test; existing CRUD/redemption/recurrence suites | PASS |
+| Portable schema v2 with v1 compatibility | v2 export/parser; exact-match provenance restore or degradation warning | portability unit and import/catalog SQL tests | PASS |
 
 ## Verification commands
 

@@ -38,7 +38,7 @@ Optional Edge runtime settings are `NOTIFICATION_BATCH_SIZE=10`, `NOTIFICATION_M
 
 1. Create a repository named, for example, `credit-card-benefits-tracker`.
 2. Choose a public repository for free Pages or confirm your GitHub plan supports Pages from a private repository. Source visibility does not expose Supabase data/secrets.
-3. From this project folder, create the local commit and remote, but **do not push yet**. The first `main` push triggers CI and then Pages, so configure the production values first.
+3. From this project folder, create the local commit and remote, but **do not push yet**. The first `main` push triggers CI only. Pages is intentionally held until the same commit passes CI and the protected backend deployment succeeds, so configure the production values first.
 
    ```bash
    git init
@@ -52,6 +52,11 @@ Optional Edge runtime settings are `NOTIFICATION_BATCH_SIZE=10`, `NOTIFICATION_M
 5. If the empty repository UI does not yet offer environments, Pages, or branch protection, return to those settings immediately after the first push in step 7.
 
 ## 2. Create Supabase and record identifiers
+
+> **Catalog release ordering:** migration `20260825000100_card_benefit_catalog.sql` must be applied
+> by the protected backend workflow before deploying the matching frontend. Until then, the prior
+> frontend remains compatible; after deployment, confirm `card_catalog_current` is readable only
+> while authenticated and that Custom account/manual benefit creation still works.
 
 1. Create a Supabase project in the region closest to you. Save the database password in a password manager.
 2. Record Project URL, publishable key, project ref, and database password.
@@ -166,13 +171,13 @@ Only `.env.example` should be tracked. Then push:
 git push -u origin main
 ```
 
-After the branch exists, protect `main`, require the CI checks, disallow force pushes, and confirm the `production` environment is restricted to `main`. In Settings → Pages select **GitHub Actions** as the source. If the first Pages run reached GitHub before Pages was enabled, run the **CI** workflow once with `workflow_dispatch`; its successful completion triggers a fresh Pages deployment. Wait for every CI job and the resulting Pages workflow to pass.
+After the branch exists, protect `main`, require the CI checks, disallow force pushes, and confirm the `production` environment is restricted to `main`. In Settings → Pages select **GitHub Actions** as the source before deploying the backend. A CI run never deploys Pages by itself. Wait for every CI job to pass, then follow §8; successful backend deployment triggers Pages for that exact commit. If Pages was not enabled in time, enable it and rerun **Deploy Backend** for the same current `main` commit—the dry run and migration push are idempotent—and wait for the resulting Pages workflow.
 
 ## 8. Deploy database and Edge Function
 
 1. Open Actions → **Deploy Backend** → Run workflow from `main`.
 2. Enter the exact project ref and approve the protected `production` environment.
-3. The workflow links the project, lints/dry-runs/applies every migration, deploys only `process-notifications` with JWT verification disabled, rejects wrong scheduler authentication, and performs a valid non-sending health check.
+3. The workflow first verifies that CI succeeded for its exact `main` commit. It then links the project, lints/dry-runs/applies every migration, deploys only `process-notifications` with JWT verification disabled, rejects wrong scheduler authentication, and performs a valid non-sending health check.
 4. In Supabase SQL Editor confirm/install Cron after migrations:
 
    ```sql
@@ -184,6 +189,7 @@ After the branch exists, protect `main`, require the CI checks, disallow force p
    Expect `7,22,37,52 * * * *`, `active = true`, and `timeout_milliseconds := 120000` in `command`. This covers the Edge processor's configured 110-second bound. Re-running the installer safely replaces the named job.
 
 5. In Edge Function settings confirm `verify_jwt=false` only for `process-notifications`; the high-entropy POST header is its authentication.
+6. A successful backend run automatically starts **Deploy Pages** with `workflow_run.head_sha`; a failed or cancelled backend run cannot publish a frontend.
 
 ## 9. Configure Auth URLs and create the owner
 
@@ -202,7 +208,7 @@ After custom SMTP is working:
 
 ## 10. Deploy Pages
 
-After CI on `main` succeeds, `deploy-pages.yml` builds with `VITE_BASE_PATH=/<REPO>/`, uploads `dist`, and deploys Pages. It receives only browser-safe `VITE_*` values. The workflow smoke checks assets, auth guard, and responsive rendering.
+Pages does not deploy directly after CI. The required release sequence is: push `main` → CI passes (including `scripts/check-release-order.mjs`) → an operator runs **Deploy Backend** for that exact `main` commit and production project → backend succeeds → `deploy-pages.yml` checks out that backend run's `workflow_run.head_sha`, builds with `VITE_BASE_PATH=/<REPO>/`, uploads `dist`, and deploys Pages. It receives only browser-safe `VITE_*` values. The workflow smoke checks assets, auth guard, and responsive rendering. There is no manual Pages fallback that can bypass the backend gate.
 
 Open `https://<OWNER>.github.io/<REPO>/`, request a magic link, and open it in the same browser/device. Confirm the query-code exchange finishes before the hash route and the URL becomes `#/dashboard` without the code.
 

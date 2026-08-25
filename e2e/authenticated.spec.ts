@@ -78,6 +78,7 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   const { session, supabaseUrl, publishableKey } = await installAuthenticatedSession(request, page);
   const suffix = `${testInfo.workerIndex}-${testInfo.retry}-${Date.now().toString(36)}`;
   const accountName = `E2E Contract Card ${suffix}`;
+  const catalogAccountName = `E2E Catalog Card ${suffix}`;
   const editedAccountName = `${accountName} Edited`;
   const benefitName = `E2E Hotel Credit ${suffix}`;
   const editedBenefitName = `${benefitName} Revised`;
@@ -89,13 +90,28 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
 
   await page.goto('/#/accounts');
   await page.getByRole('button', { name: '+ Add account' }).click();
+  await page.getByLabel('Search issuer or card').fill('Blue Cash Preferred');
+  await page.getByRole('button', { name: /American Express Blue Cash Preferred/i }).click();
+  await page.getByRole('button', { name: 'Continue to details' }).click();
+  await page.getByLabel('Display name').fill(catalogAccountName);
+  await page.getByRole('button', { name: 'Preview benefits' }).click();
+  const issuerSource = page.getByRole('link', { name: /Issuer source/i });
+  await expect(issuerSource).toHaveAttribute('target', '_blank');
+  await expect(issuerSource).toHaveAttribute('rel', 'noopener noreferrer');
+  await page.getByRole('button', { name: 'Create account and 1 benefit' }).click();
+  await expect(page.getByRole('status')).toContainText('Account created with 1 benefit.');
+  await expect(accountCard(page, catalogAccountName)).toBeVisible();
+
+  await page.getByRole('button', { name: '+ Add account' }).click();
+  await page.getByRole('button', { name: /Custom card, service, or portal/i }).click();
+  await page.getByRole('button', { name: 'Continue to details' }).click();
   await page.getByLabel('Display name').fill(accountName);
   await page.getByLabel('Issuer/provider').fill('E2E Bank');
   await page.getByLabel('Card/service name').fill('Integration Card');
   await page.getByLabel('Last four').fill('8181');
   await page.getByLabel('Notes').fill('Created through the authenticated browser contract test.');
   await page.getByRole('button', { name: 'Save account' }).click();
-  await expect(page.getByRole('status')).toContainText('Account saved.');
+  await expect(page.getByRole('status')).toContainText('Custom account created.');
   await expect(accountCard(page, accountName)).toBeVisible();
 
   await accountCard(page, accountName).getByRole('button', { name: 'Edit' }).click();

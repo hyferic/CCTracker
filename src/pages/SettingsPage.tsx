@@ -145,7 +145,7 @@ export function SettingsPage() {
         notificationPolicy,
       );
       setMessage(
-        `Restore completed atomically: ${counts.accounts} accounts, ${counts.definitions} definitions, ${counts.instances} periods, and ${counts.redemptions} usage entries.`,
+        `Restore completed atomically: ${counts.accounts} accounts, ${counts.definitions} definitions, ${counts.instances} periods, and ${counts.redemptions} usage entries.${counts.warnings.length ? ` Provenance warning: ${counts.warnings.join(' ')}` : ''}`,
       );
       setImportData(null);
       setImportKind(null);

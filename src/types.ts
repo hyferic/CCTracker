@@ -32,6 +32,11 @@ export interface Account {
   annual_fee: number | null;
   annual_fee_currency: string | null;
   renewal_date: string | null;
+  benefit_anniversary_date: string | null;
+  origin_product_version_id: string | null;
+  origin_product_stable_key: string | null;
+  origin_product_version: number | null;
+  origin_product_hash: string | null;
   notes: string | null;
   is_active: boolean;
   created_at: string;
@@ -69,6 +74,13 @@ export interface BenefitInput {
   interval_months: number | null;
   expiration_email_enabled: boolean;
   reactivation_email_enabled: boolean;
+  terms_timezone: string;
+  period_value_rules: PeriodValueRule[];
+}
+
+export interface PeriodValueRule {
+  calendar_month: number;
+  available_quantity: number;
 }
 
 export interface BenefitDefinition extends BenefitInput {
@@ -78,6 +90,13 @@ export interface BenefitDefinition extends BenefitInput {
   current_revision_no: number;
   created_at: string;
   updated_at: string;
+  origin_source: 'manual' | 'catalog' | 'import';
+  origin_template_version_id: string | null;
+  origin_template_stable_key: string | null;
+  origin_template_version: number | null;
+  origin_template_hash: string | null;
+  origin_verified_on: string | null;
+  customized_at: string | null;
 }
 
 export interface BenefitInstance {
@@ -139,6 +158,54 @@ export interface BenefitInstance {
   is_live: boolean;
   is_audit_version: boolean;
   search_text: string;
+  origin_source: 'manual' | 'catalog' | 'import';
+  origin_template_version_id: string | null;
+  origin_template_stable_key: string | null;
+  origin_template_version: number | null;
+  origin_verified_on: string | null;
+  customized_at: string | null;
+  terms_timezone: string;
+  period_value_rules: PeriodValueRule[];
+}
+
+export interface CardCatalogTemplate {
+  template_version_id: string;
+  template_stable_key: string;
+  template_version: number;
+  template_name: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  date_strategy: 'calendar' | 'account_anniversary' | 'fixed' | 'qualification_cycle';
+  fixed_start: string | null;
+  fixed_end: string | null;
+  setup_field: 'benefit_anniversary_date' | 'first_qualifying_month' | null;
+  terms_timezone: string;
+  default_selected: boolean;
+  confidence: 'high' | 'limited' | 'contingent';
+  official_url: string;
+  verified_on: string;
+  age_days: number;
+}
+
+export interface CardCatalogProduct {
+  product_version_id: string;
+  product_stable_key: string;
+  product_version: number;
+  issuer: string;
+  product_name: string;
+  aliases: string[];
+  market_scope: string;
+  annual_fee: number | null;
+  annual_fee_currency: string | null;
+  official_url: string;
+  verified_on: string;
+  age_days: number;
+  templates: CardCatalogTemplate[];
+}
+
+export interface TemplateSelection {
+  template_version_id: string;
+  setup?: { first_qualifying_month?: string };
 }
 
 export interface Redemption {

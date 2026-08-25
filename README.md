@@ -164,13 +164,40 @@ Expiration selection targets `period_end - 7` local calendar days and catches up
 
 The unique key `(benefit_instance_id, notification_type)` creates one logical event. First claim freezes recipient, subject, bodies, payload hash, and UUID idempotency key. Retryable/ambiguous outcomes reuse identical bytes/key at bounded intervals inside Resend's 24-hour window; leases prevent overlap and allow recovery after interruption. Slow provider calls are bounded. The UI calls provider acceptance “Sent” and does not claim inbox delivery without a webhook.
 
+## Standard card catalog and custom benefits
+
+Accounts → Add account offers an exact, searchable catalog for selected U.S. consumer cards from
+American Express, Chase, Capital One, U.S. Bank, Bank of America, and Citi. After choosing a card,
+review the editable account details, enter a separate benefit-anniversary date when required, then
+select the benefits to create. Limited or contingent items are unchecked by default. Every row
+links to the issuer source and shows its verification date; issuer terms always control.
+
+Provisioned items are normal benefits: edit, deactivate, redeem, and preserve their history exactly
+like a manually entered benefit. An edit marks only that benefit customized; no later catalog
+change overwrites it or its siblings. Existing accounts are not backfilled automatically.
+
+The Custom choice works even if the catalog is unavailable. Accounts and Benefits both keep a
+direct **Add custom benefit** path for side offers, targeted offers, shopping portals, rebates, or
+cards not listed. A custom benefit can attach to either a catalog-created or custom account. Never
+add the same shared benefit twice for primary and authorized-user cards without checking its terms.
+
+Catalog facts older than 90 days show a warning; facts older than 180 days require explicit issuer
+terms acknowledgement. Catalog updates are additive migrations. Apply backend migrations before
+deploying a frontend that expects a newer catalog contract.
+
 ## Backup and restore
 
 Use Settings → Export canonical JSON weekly on a hobby/free deployment and monthly at minimum on a backed-up plan. Encrypt the file, store it off-repository, and perform a quarterly restore drill. Canonical JSON is the only format that preserves definitions, periods, redemption history, and their relationships for a full restore.
 
 For bulk setup, use Settings → Download CSV import template. Its `record_type` column accepts `account` and `definition`; stable `source_id` values identify rows, `account_source_id` links a definition to an account in the same file, and tags are pipe-delimited. The separate flattened account/definition/instance/redemption CSV exports are analysis files and are not round-trip import templates. CSV import validates quoting, fields, references, the 5 MiB/5,000-row limits, and recurrence/value combinations before calling the same atomic `import_backup` transaction. It creates usable periods through the recurrence engine but does not import historical periods or redemptions.
 
-Both import paths provide a preview and support `skip` or `import_as_new` duplicate policy. They default to `suppress_current` notifications; `schedule_fresh` requires explicit acceptance of duplicate-email risk. One invalid row or reference rolls back the complete import.
+Both import paths provide a preview and support `skip` or `import_as_new` duplicate policy. Canonical
+JSON schema v2 preserves benefit-anniversary dates, terms timezones, month-specific value rules, and
+exact catalog provenance when the installed key/version/hash matches. Schema v1 remains accepted;
+missing or mismatched catalog provenance degrades safely to custom/manual and produces a restore
+warning. Catalog rows themselves are never exported. Imports default to `suppress_current`
+notifications; `schedule_fresh` requires explicit acceptance of duplicate-email risk. One invalid
+row or reference rolls back the complete import.
 
 Exports contain personal notes. They are ignored by Git and must never be committed. CSV cells beginning with spreadsheet formula prefixes are neutralized before download; numeric negative values remain numeric.
 
@@ -182,8 +209,8 @@ Exports contain personal notes. They are ignored by Git and must never be commit
 2. Add migrations instead of modifying an already deployed migration.
 3. Run `npm run verify`, local database/Edge tests, and Playwright.
 4. Review generated SQL, dependency changes, CSP impact, and secret scan output.
-5. Merge only after CI passes.
-6. Run the protected backend workflow before merging/deploying a frontend that requires new backend behavior.
+5. Merge or push to `main` and wait for CI to pass; CI includes a static backend-first release-order check, and CI alone never deploys Pages.
+6. Run the protected **Deploy Backend** workflow for that exact `main` commit and project. Its success automatically triggers Pages for the same commit; failure or cancellation publishes nothing.
 7. Confirm Pages smoke, scheduler heartbeat, and a health-only manual recovery call.
 
 ## Troubleshooting

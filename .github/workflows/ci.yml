@@ -34,6 +34,9 @@ jobs:
       - name: Scan tracked files for common secret formats
         run: node scripts/check-secrets.mjs
 
+      - name: Verify backend-first release ordering
+        run: node scripts/check-release-order.mjs
+
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const BACKUP_SCHEMA_VERSION = 1;
+export const BACKUP_SCHEMA_VERSION = 2;
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 export const MAX_IMPORT_ROWS = 5_000;
 
@@ -21,12 +21,17 @@ const accountBackupSchema = z.object({
     .regex(/^[A-Z]{3}$/)
     .nullable(),
   renewal_date: z.string().date().nullable(),
+  benefit_anniversary_date: z.string().date().nullable().optional(),
+  origin_product_version_id: id.nullable().optional(),
+  origin_product_stable_key: z.string().nullable().optional(),
+  origin_product_version: z.number().int().positive().nullable().optional(),
+  origin_product_hash: z.string().nullable().optional(),
   notes: z.string().max(10000).nullable(),
   active: z.boolean(),
 });
 
 const backupSchema = z.object({
-  schema_version: z.literal(BACKUP_SCHEMA_VERSION),
+  schema_version: z.union([z.literal(1), z.literal(BACKUP_SCHEMA_VERSION)]),
   exported_at: z.string().datetime(),
   timezone: z.string().min(1),
   accounts: z.array(accountBackupSchema),
@@ -38,7 +43,7 @@ const backupSchema = z.object({
 });
 
 export interface BackupData {
-  schema_version: 1;
+  schema_version: 1 | 2;
   exported_at: string;
   timezone: string;
   accounts: Array<Record<string, unknown>>;
@@ -64,7 +69,7 @@ export function buildBackup(input: {
     return copy;
   };
   return {
-    schema_version: 1,
+    schema_version: BACKUP_SCHEMA_VERSION,
     exported_at: new Date().toISOString(),
     timezone: input.timezone,
     accounts: input.accounts.map(stripOwnership),

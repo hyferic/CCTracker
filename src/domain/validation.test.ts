@@ -32,6 +32,8 @@ const fixedBenefit: BenefitInput = {
   interval_months: null,
   expiration_email_enabled: true,
   reactivation_email_enabled: true,
+  terms_timezone: 'America/New_York',
+  period_value_rules: [],
 };
 
 describe('benefit validation', () => {
@@ -113,5 +115,31 @@ describe('benefit validation', () => {
       false,
     );
     expect(accountInputSchema.safeParse({ ...account, last_four: '12345' }).success).toBe(false);
+  });
+
+  it('allows only unique month-specific values on calendar money benefits', () => {
+    expect(
+      benefitInputSchema.safeParse({
+        ...fixedBenefit,
+        period_value_rules: [{ calendar_month: 12, available_quantity: 35 }],
+      }).success,
+    ).toBe(true);
+    expect(
+      benefitInputSchema.safeParse({
+        ...fixedBenefit,
+        period_value_rules: [
+          { calendar_month: 12, available_quantity: 35 },
+          { calendar_month: 12, available_quantity: 40 },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      benefitInputSchema.safeParse({
+        ...fixedBenefit,
+        recurrence_basis: 'anniversary',
+        anchor_date: '2028-01-01',
+        period_value_rules: [{ calendar_month: 12, available_quantity: 35 }],
+      }).success,
+    ).toBe(false);
   });
 });

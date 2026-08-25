@@ -405,13 +405,13 @@ credit-card-benefits-tracker/
 
 ### `deploy-pages.yml`
 
-- After protected `main` CI succeeds, build with Vite `base: '/<REPOSITORY_NAME>/'`, upload `dist`, and deploy using official Pages actions pinned to commits and minimal Pages/id-token permissions.
+- Trigger only after a successful protected **Deploy Backend** run on `main`, check out that run's exact `workflow_run.head_sha`, build with Vite `base: '/<REPOSITORY_NAME>/'`, upload `dist`, and deploy using official Pages actions pinned to commits and minimal Pages/id-token permissions. CI success alone cannot publish a backend-incompatible frontend; a CI static check guards this release ordering from workflow regressions.
 - Build receives only browser-safe `VITE_*` values. Hash routing handles nested application routes; PKCE callback uses the repository root query.
 - Production smoke checks asset URLs, login request/callback, auth guard, database read, and responsive dashboard at the final repository URL.
 
 ### `deploy-backend.yml`
 
-- Protected `workflow_dispatch` (or approved tagged release) targets a GitHub `production` environment with required human approval.
+- Protected `workflow_dispatch` targets a GitHub `production` environment with required human approval, verifies successful CI for the exact dispatched `main` commit, and targets the explicitly confirmed project.
 - Pin Supabase CLI; validate migrations/diff, link the exact project, apply migrations, deploy `process-notifications`, and fail before frontend release if backend compatibility breaks.
 - Use `SUPABASE_ACCESS_TOKEN`, project ref, and database password only at runtime; no Resend/Auth SMTP secrets enter GitHub.
 - Post-deploy smoke tests wrong/valid scheduler authentication without sending a real user email, verifies Cron registration/Vault reference, and records the deployed migration/function revision.
@@ -431,7 +431,7 @@ credit-card-benefits-tracker/
 6. Put benefit API/from values in Edge secrets and SMTP values only in Supabase Auth; disable Auth link tracking before sending any invitation.
 7. Create or invite the owner in Supabase Auth; require confirmed email and disable new/anonymous signup. An invitation may be sent only after step 6.
 8. Configure exact production/local Auth Site/Redirect URLs for the Pages repository root.
-9. Add GitHub variables/secrets from Section 14, enable Pages through Actions, run CI, backend deploy, then Pages deploy.
+9. Add GitHub variables/secrets from Section 14 and enable Pages through Actions. Push `main`, wait for exact-commit CI, then run the protected backend deploy; only its success triggers Pages for that same commit.
 10. Validate production PKCE in the initiating browser, owner-only access, CRUD/RPC isolation, refresh/redeploy persistence, and logout/revocation.
 11. Send a controlled test benefit email; confirm UI means provider accepted and inspect Resend outcome.
 12. Create test monthly/quarterly/anniversary benefits, a partial redemption, an expiration within seven days, and enrollment deadline.
@@ -559,3 +559,32 @@ The implementation-stage `REQUIREMENTS.md` will expand every major user requirem
 Agent 1 concludes that this revised architecture is workable, appropriately small, deployable from GitHub, secure for the stated personal use, calendar-correct, history-preserving, observable, and explicit about provider/free-tier limits. Agent 1 **APPROVES Final Candidate Plan v3**.
 
 Agent 2 independently reviewed the exact Final Candidate Plan v3 architecture recorded in `PLAN_CONSENSUS.md` and **APPROVES** it. Both agents approve the same plan; the implementation gate is **OPEN** and Agent 3 is authorized to begin.
+
+## 23. Approved amendment — versioned standard-card benefit catalog (2026-08-25)
+
+Agents 1 and 2 approved an additive, migration-managed catalog that provisions ordinary benefits
+when an exact U.S. consumer card product is selected. Immutable product/template versions live in
+the private schema; authenticated clients receive only a narrow current view. The atomic
+`create_account_with_templates` RPC locks and validates exact version UUIDs, rejects stale or
+retired versions, requires acknowledgement after 180 days, and creates the account plus selected
+benefits in one transaction. Existing accounts are unchanged and catalog changes never sync into
+user records.
+
+Account fee renewal and benefit anniversary are distinct. Template-derived definitions and every
+revision snapshot retain source/version/hash/verification provenance, an explicit issuer terms
+timezone, and a narrowly validated calendar-month value override array. Editing a template benefit
+marks that definition customized without changing history or sibling benefits. Ordinary manual
+creation cannot inject provenance.
+
+The first-release catalog contains the agreed current Amex, Chase, Capital One, U.S. Bank, Bank of
+America, and Citi products/benefits verified on 2026-08-25. Retired Saks is retained only in the
+private audit catalog and is never selectable; Oura is current; DoorDash coupons are separate;
+contingent U.S. Bank qualification markers begin Upcoming with reminders disabled. The UI uses a
+three-step exact-product/details/preview flow, remains usable as Custom if catalog loading fails,
+and keeps `/benefits/new` prominent for side offers and all other custom benefits.
+
+Canonical backup schema v2 includes anniversary, rule/timezone, and optional exact provenance;
+v1 remains accepted. Restore preserves provenance only when the exact installed key/version/hash
+matches and otherwise imports safely as custom/manual with a visible warning. CSV remains manual
+origin. No dependency, service, secret, scheduler, or recurring-cost change was approved. Deploy
+this backend migration before its frontend.
