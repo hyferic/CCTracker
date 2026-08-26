@@ -178,9 +178,19 @@ The unique key `(benefit_instance_id, notification_type)` creates one logical ev
 
 Accounts → Add account offers an exact, searchable catalog for selected U.S. consumer cards from
 American Express, Chase, Capital One, U.S. Bank, Bank of America, and Citi. After choosing a card,
-review the editable account details, enter a separate benefit-anniversary date when required, then
-select the benefits to create. Limited or contingent items are unchecked by default. Every row
-links to the issuer source and shows its verification date; issuer terms always control.
+review the editable account details, then select the benefits to create. The catalog currently adds
+Hilton Honors Aspire, Marriott Bonvoy Brilliant, United Explorer, Southwest Rapid Rewards Priority,
+and Delta SkyMiles Reserve alongside the original catalog. Limited or contingent items are unchecked
+by default. Every row links to the issuer source and shows its verification date; issuer terms always
+control.
+
+Renewal semantics are stored per benefit: explicit calendar-year/month/quarter benefits reset on
+calendar boundaries, while benefits the issuer says arrive after card renewal use the account's
+benefit-anniversary date. For an anniversary benefit, the form auto-fills that date from the annual-fee
+renewal date and the server applies the same fallback atomically when only renewal_date is supplied.
+The date is labeled as an estimate so it can be overridden when the issuer's benefit boundary differs
+from the fee anniversary. If neither date is known, anniversary templates remain blocked; calendar
+benefits do not require either date.
 
 Provisioned items are normal benefits: edit, deactivate, redeem, and preserve their history exactly
 like a manually entered benefit. An edit marks only that benefit customized; no later catalog

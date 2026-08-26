@@ -18,9 +18,9 @@ select ok(not has_table_privilege('authenticated', 'private.card_catalog_product
   and not has_table_privilege('authenticated', 'private.card_catalog_template_versions', 'SELECT'),
   'browser roles cannot read or mutate catalog base tables');
 select is((select count(distinct product_version_id) from public.card_catalog_current),
-  12::bigint, 'the current catalog exposes exactly the 12 approved products');
+  17::bigint, 'the current catalog exposes exactly the 17 approved products');
 select is((select count(*) from public.card_catalog_current),
-  39::bigint, 'the current catalog exposes exactly the 39 approved templates');
+  54::bigint, 'the current catalog exposes exactly the 54 approved templates');
 select ok(has_function_privilege('authenticated',
   'public.create_account_with_templates(jsonb,uuid,jsonb,boolean)', 'EXECUTE'),
   'authenticated users can call the atomic bundle RPC');

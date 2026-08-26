@@ -53,10 +53,12 @@ Optional Edge runtime settings are `NOTIFICATION_BATCH_SIZE=10`, `NOTIFICATION_M
 
 ## 2. Create Supabase and record identifiers
 
-> **Catalog release ordering:** migration `20260825000100_card_benefit_catalog.sql` must be applied
+> **Catalog release ordering:** migrations `20260825000100_card_benefit_catalog.sql` and
+> `20260825000200_expand_card_catalog.sql` must be applied
 > by the protected backend workflow before deploying the matching frontend. Until then, the prior
 > frontend remains compatible; after deployment, confirm `card_catalog_current` is readable only
-> while authenticated and that Custom account/manual benefit creation still works.
+> while authenticated, renewal-date inference works for anniversary templates, and Custom
+> account/manual benefit creation still works.
 
 1. Create a Supabase project in the region closest to you. Save the database password in a password manager.
 2. Record Project URL, publishable key, project ref, and database password.

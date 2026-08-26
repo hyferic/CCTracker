@@ -165,9 +165,10 @@ describe('authenticated core flows', () => {
     await user.click(await screen.findByRole('button', { name: '+ Add account' }));
     await user.click(screen.getByRole('button', { name: /Chase Sapphire Reserve/i }));
     await user.click(screen.getByRole('button', { name: 'Continue to details' }));
-    fireEvent.change(screen.getByLabelText(/Benefit anniversary\/reset date/), {
+    fireEvent.change(screen.getByLabelText(/Annual-fee renewal date/), {
       target: { value: '2026-08-15' },
     });
+    expect(screen.getByLabelText(/Benefit anniversary\/reset date/)).toHaveValue('2026-08-15');
     await user.click(screen.getByRole('button', { name: 'Preview benefits' }));
     const source = screen.getByRole('link', { name: /Issuer source/i });
     expect(source).toHaveAttribute('target', '_blank');

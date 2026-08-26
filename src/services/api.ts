@@ -168,6 +168,7 @@ export async function createAccountWithTemplates(input: {
     definition_ids: string[];
     benefits_created: number;
     catalog_verified_on: string | null;
+    benefit_anniversary_inferred: boolean;
   };
 }
 

@@ -81,6 +81,9 @@ export function AccountsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [setupMonths, setSetupMonths] = useState<Record<string, string>>({});
   const [staleAcknowledged, setStaleAcknowledged] = useState(false);
+  const [anniversaryDateSource, setAnniversaryDateSource] = useState<
+    'renewal_date' | 'manual' | null
+  >(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +106,9 @@ export function AccountsPage() {
     setSelected(new Set());
     setSetupMonths({});
     setStaleAcknowledged(false);
+    setAnniversaryDateSource(
+      account !== 'new' && account.benefit_anniversary_date ? 'manual' : null,
+    );
     setError(null);
     setMessage(null);
   }
@@ -125,6 +131,7 @@ export function AccountsPage() {
       annual_fee: next.annual_fee,
       annual_fee_currency: next.annual_fee_currency,
     });
+    setAnniversaryDateSource(null);
   }
 
   function validateAccount() {
@@ -134,6 +141,10 @@ export function AccountsPage() {
       return null;
     }
     return parsed.data;
+  }
+
+  function hasAnniversaryTemplate() {
+    return Boolean(product?.templates.some((item) => item.date_strategy === 'account_anniversary'));
   }
 
   async function save(event?: FormEvent) {
@@ -149,10 +160,11 @@ export function AccountsPage() {
         );
         if (
           templates.some((item) => item.setup_field === 'benefit_anniversary_date') &&
-          !parsed.benefit_anniversary_date
+          !parsed.benefit_anniversary_date &&
+          !parsed.renewal_date
         )
           throw new Error(
-            'Benefit anniversary/reset date is required for the selected anniversary benefit.',
+            'Enter an annual-fee renewal date or a separate benefit anniversary/reset date for the selected anniversary benefit.',
           );
         const selections: TemplateSelection[] = templates.map((item) => ({
           template_version_id: item.template_version_id,
@@ -167,7 +179,7 @@ export function AccountsPage() {
           staleCatalogAcknowledged: staleAcknowledged,
         });
         setMessage(
-          `Account created with ${created.benefits_created} ${created.benefits_created === 1 ? 'benefit' : 'benefits'}.`,
+          `Account created with ${created.benefits_created} ${created.benefits_created === 1 ? 'benefit' : 'benefits'}${created.benefit_anniversary_inferred ? '. Benefit anniversary was inferred from the renewal date; verify the issuer boundary.' : '.'}`,
         );
       } else if (editing === 'new') {
         await createAccount(parsed);
@@ -521,9 +533,18 @@ export function AccountsPage() {
                     <input
                       type="date"
                       value={form.renewal_date ?? ''}
-                      onChange={(event) =>
-                        setForm({ ...form, renewal_date: event.target.value || null })
-                      }
+                      onChange={(event) => {
+                        const renewalDate = event.target.value || null;
+                        setForm((current) => ({
+                          ...current,
+                          renewal_date: renewalDate,
+                          ...(hasAnniversaryTemplate() && anniversaryDateSource !== 'manual'
+                            ? { benefit_anniversary_date: renewalDate }
+                            : {}),
+                        }));
+                        if (hasAnniversaryTemplate() && anniversaryDateSource !== 'manual')
+                          setAnniversaryDateSource(renewalDate ? 'renewal_date' : null);
+                      }}
                     />
                     <small>Fee or membership renewal only—not a benefit reset.</small>
                   </label>
@@ -532,12 +553,18 @@ export function AccountsPage() {
                     <input
                       type="date"
                       value={form.benefit_anniversary_date ?? ''}
-                      onChange={(event) =>
-                        setForm({ ...form, benefit_anniversary_date: event.target.value || null })
-                      }
+                      onChange={(event) => {
+                        setForm({
+                          ...form,
+                          benefit_anniversary_date: event.target.value || null,
+                        });
+                        setAnniversaryDateSource(event.target.value ? 'manual' : null);
+                      }}
                     />
                     <small>
-                      Required for selected anniversary benefits. Chase boundaries are estimates.
+                      {hasAnniversaryTemplate() && anniversaryDateSource === 'renewal_date'
+                        ? 'Auto-filled from the annual-fee renewal date. Verify the issuer benefit boundary; you can override it here.'
+                        : 'Used for selected anniversary benefits. Calendar-year benefits do not use this date.'}
                     </small>
                   </label>
                   <label className="field field--wide">
