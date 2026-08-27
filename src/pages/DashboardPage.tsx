@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { BenefitTable } from '../components/BenefitTable';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
 import { formatDate } from '../domain/dates';
-import { attentionScore } from '../domain/status';
+import { attentionLabel, attentionScore } from '../domain/status';
 import { formatQuantity } from '../domain/money';
 import { useBusinessDate } from '../features/profile/ProfileContext';
 import { useAsync } from '../hooks/useAsync';
@@ -154,6 +154,25 @@ export function DashboardPage() {
           a.period_end.localeCompare(b.period_end) || a.benefit_name.localeCompare(b.benefit_name),
       );
   }, [active, expirationBucket, monthBounds]);
+  const otherAttention = useMemo(
+    () =>
+      instances
+        .filter((item) => item.is_live && item.definition_active)
+        .filter(
+          (item) =>
+            item.enrollment_missed ||
+            item.enrollment_due_7_days ||
+            item.enrollment_due_30_days ||
+            item.recently_activated ||
+            item.reset_soon ||
+            item.lifecycle_status === 'upcoming',
+        )
+        .sort(
+          (a, b) =>
+            attentionScore(b) - attentionScore(a) || a.period_end.localeCompare(b.period_end),
+        ),
+    [instances],
+  );
   const categories = [...new Set(instances.map((item) => item.category))].sort();
   const providers = [
     ...new Set(instances.map((item) => item.issuer).filter(Boolean)),
@@ -352,6 +371,39 @@ export function DashboardPage() {
               </div>
             )}
           </section>
+          {otherAttention.length > 0 && (
+            <section className="panel attention-panel" aria-labelledby="other-attention-heading">
+              <div className="section-head">
+                <div>
+                  <p className="eyebrow">Other reminders</p>
+                  <h2 id="other-attention-heading">Enrollment and reset reminders</h2>
+                </div>
+              </div>
+              <div className="attention-list">
+                {otherAttention.map((item) => {
+                  const account = item.account_id ? accountById.get(item.account_id) : undefined;
+                  const cardLabel =
+                    account?.display_name ??
+                    item.account_display_name ??
+                    item.issuer ??
+                    'Unassigned';
+                  return (
+                    <div className="attention-item" key={item.instance_id}>
+                      <Link className="attention-copy" to={`/instances/${item.instance_id}`}>
+                        <strong>
+                          {cardLabel}
+                          {account?.last_four ? ` · •••• ${account.last_four}` : ''}
+                        </strong>
+                        <small>
+                          {attentionLabel(item)} · {item.benefit_name}
+                        </small>
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
           <section className="panel">
             <div className="section-head section-head--wrap">
               <div>
