@@ -10,4 +10,5 @@ select function_privs_are('public', 'confirm_benefit_period_used', array['uuid',
   'authenticated', array['EXECUTE'],
   'dashboard confirmation RPC is executable by authenticated users');
 
+select * from finish();
 rollback;
