@@ -710,6 +710,11 @@ code {
   margin-top: 0.2rem;
   color: var(--ink-soft);
 }
+.attention-period {
+  margin-top: 0.15rem;
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+}
 .attention-value {
   font-weight: 800;
 }

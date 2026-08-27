@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { BenefitTable } from '../components/BenefitTable';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
 import { formatDate } from '../domain/dates';
-import { attentionLabel, attentionScore } from '../domain/status';
+import { attentionScore } from '../domain/status';
 import { formatQuantity } from '../domain/money';
 import { useBusinessDate } from '../features/profile/ProfileContext';
 import { useAsync } from '../hooks/useAsync';
@@ -92,6 +92,45 @@ const expirationBucketLabels: Record<ExpirationBucket, string> = {
   month: 'Expiring this month',
 };
 
+function simplifyCardName(issuer: string | null | undefined, product: string | null | undefined) {
+  const rawIssuer = issuer?.trim() ?? '';
+  let rawProduct = product?.trim() ?? '';
+  if (rawIssuer && rawProduct.toLowerCase().startsWith(rawIssuer.toLowerCase())) {
+    rawProduct = rawProduct.slice(rawIssuer.length).trim();
+  }
+  rawProduct = rawProduct
+    .replace(/\bcard\b/gi, '')
+    .replace(/\s*[—-]\s*(personal|business)\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const compactIssuer = rawIssuer.replace(/\bAmerican Express\b/gi, 'Amex').trim();
+  return [compactIssuer, rawProduct].filter(Boolean).join(' ');
+}
+
+function cardLabel(
+  account: { nickname: string | null; issuer: string; card_service_name: string } | undefined,
+  instance: BenefitInstance,
+) {
+  const nickname = account?.nickname?.trim();
+  if (nickname) return nickname;
+  return (
+    simplifyCardName(
+      account?.issuer ?? instance.issuer,
+      account?.card_service_name ?? instance.account_display_name,
+    ) ||
+    instance.account_display_name ||
+    instance.issuer ||
+    'Unassigned'
+  );
+}
+
+function hasMerchantGuidance(instance: BenefitInstance) {
+  return Boolean(
+    !instance.merchant &&
+      (instance.merchant_category || instance.eligibility_notes || instance.website),
+  );
+}
+
 export function DashboardPage() {
   const [filters, setFilters] = useState(initialFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -154,25 +193,6 @@ export function DashboardPage() {
           a.period_end.localeCompare(b.period_end) || a.benefit_name.localeCompare(b.benefit_name),
       );
   }, [active, expirationBucket, monthBounds]);
-  const otherAttention = useMemo(
-    () =>
-      instances
-        .filter((item) => item.is_live && item.definition_active)
-        .filter(
-          (item) =>
-            item.enrollment_missed ||
-            item.enrollment_due_7_days ||
-            item.enrollment_due_30_days ||
-            item.recently_activated ||
-            item.reset_soon ||
-            item.lifecycle_status === 'upcoming',
-        )
-        .sort(
-          (a, b) =>
-            attentionScore(b) - attentionScore(a) || a.period_end.localeCompare(b.period_end),
-        ),
-    [instances],
-  );
   const categories = [...new Set(instances.map((item) => item.category))].sort();
   const providers = [
     ...new Set(instances.map((item) => item.issuer).filter(Boolean)),
@@ -310,23 +330,17 @@ export function DashboardPage() {
               <div className="attention-list">
                 {expirationDetails.map((item) => {
                   const account = item.account_id ? accountById.get(item.account_id) : undefined;
-                  const cardLabel =
-                    account?.display_name ??
-                    item.account_display_name ??
-                    item.issuer ??
-                    'Unassigned';
                   return (
                     <div className="attention-item" key={item.instance_id}>
                       <Link className="attention-copy" to={`/instances/${item.instance_id}`}>
-                        <strong>
-                          {cardLabel}
-                          {account?.last_four ? ` · •••• ${account.last_four}` : ''}
-                        </strong>
+                        <strong>{item.benefit_name}</strong>
                         <small>
-                          {item.benefit_name} · Ends {formatDate(item.period_end)}
+                          {cardLabel(account, item)}
+                          {account?.last_four ? ` · •••• ${account.last_four}` : ''}
                         </small>
+                        <span className="attention-period">Ends {formatDate(item.period_end)}</span>
                       </Link>
-                      {item.merchant && (
+                      {hasMerchantGuidance(item) && (
                         <div className="merchant-popover-wrap">
                           <button
                             className="merchant-button"
@@ -338,19 +352,20 @@ export function DashboardPage() {
                               )
                             }
                           >
-                            {item.merchant}
+                            Eligible merchants
                           </button>
                           {merchantInstanceId === item.instance_id && (
                             <div
                               className="merchant-popover"
                               role="dialog"
-                              aria-label={`${item.merchant} benefit details`}
+                              aria-label="Eligible merchant details"
                             >
-                              <strong>{item.merchant}</strong>
+                              <strong>Eligible merchants</strong>
                               {item.merchant_category && <span>{item.merchant_category}</span>}
+                              {item.eligibility_notes && <span>{item.eligibility_notes}</span>}
                               {item.website && (
                                 <a href={item.website} target="_blank" rel="noreferrer">
-                                  Open website
+                                  Open eligible website
                                 </a>
                               )}
                             </div>
@@ -371,39 +386,6 @@ export function DashboardPage() {
               </div>
             )}
           </section>
-          {otherAttention.length > 0 && (
-            <section className="panel attention-panel" aria-labelledby="other-attention-heading">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Other reminders</p>
-                  <h2 id="other-attention-heading">Enrollment and reset reminders</h2>
-                </div>
-              </div>
-              <div className="attention-list">
-                {otherAttention.map((item) => {
-                  const account = item.account_id ? accountById.get(item.account_id) : undefined;
-                  const cardLabel =
-                    account?.display_name ??
-                    item.account_display_name ??
-                    item.issuer ??
-                    'Unassigned';
-                  return (
-                    <div className="attention-item" key={item.instance_id}>
-                      <Link className="attention-copy" to={`/instances/${item.instance_id}`}>
-                        <strong>
-                          {cardLabel}
-                          {account?.last_four ? ` · •••• ${account.last_four}` : ''}
-                        </strong>
-                        <small>
-                          {attentionLabel(item)} · {item.benefit_name}
-                        </small>
-                      </Link>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
           <section className="panel">
             <div className="section-head section-head--wrap">
               <div>
@@ -638,6 +620,11 @@ export function DashboardPage() {
                 instances={filtered}
                 onConfirmUsed={confirmUsed}
                 confirmingInstanceId={confirmingInstanceId}
+                accountLabel={(item) => {
+                  const account = item.account_id ? accountById.get(item.account_id) : undefined;
+                  const label = cardLabel(account, item);
+                  return account?.last_four ? `${label} · •••• ${account.last_four}` : label;
+                }}
               />
             ) : (
               <EmptyState title="No benefits match these filters">

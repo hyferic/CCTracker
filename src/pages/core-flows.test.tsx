@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, vi } from 'vitest';
@@ -393,7 +393,7 @@ describe('authenticated core flows', () => {
     );
   });
 
-  it('labels an upcoming recurring reset as actionable', async () => {
+  it('does not show reset reminders on the dashboard', async () => {
     const user = userEvent.setup();
     api.listInstances.mockResolvedValue([
       benefitInstance({
@@ -406,7 +406,11 @@ describe('authenticated core flows', () => {
     ]);
     renderRoute('/dashboard', '/dashboard', <DashboardPage />);
 
-    expect(await screen.findByText(/Resets soon/)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: '$15 monthly rideshare credit' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Resets soon/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Other reminders/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Filter' }));
     expect(screen.getByLabelText('Merchant')).toBeInTheDocument();
     expect(screen.getByLabelText('Definition status')).toHaveValue('active');
@@ -417,6 +421,10 @@ describe('authenticated core flows', () => {
     api.listInstances.mockResolvedValue([benefitInstance()]);
     renderRoute('/dashboard', '/dashboard', <DashboardPage />);
 
+    expect(
+      await screen.findByRole('link', { name: '$15 monthly rideshare credit' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rideshare Co' })).not.toBeInTheDocument();
     const button = await screen.findByRole('button', { name: 'Mark period used' });
     await user.click(button);
 
@@ -435,16 +443,20 @@ describe('authenticated core flows', () => {
     api.listAccounts.mockResolvedValue([
       {
         id: '44444444-4444-4444-8444-444444444444',
-        display_name: 'Amex Gold',
+        display_name: 'American Express Gold Card — Personal',
+        issuer: 'American Express',
+        card_service_name: 'Gold Card',
+        nickname: null,
         last_four: '1001',
       },
     ]);
     api.listInstances.mockResolvedValue([
       benefitInstance({
         benefit_name: 'Dining credit',
-        merchant: 'Resy',
+        merchant: null,
         merchant_category: 'Dining',
-        website: 'https://resy.com',
+        eligibility_notes: 'Use at participating U.S. restaurants.',
+        website: 'https://americanexpress.com',
         days_remaining: 20,
         expiring_7_days: false,
         expiring_30_days: true,
@@ -453,17 +465,58 @@ describe('authenticated core flows', () => {
     renderRoute('/dashboard', '/dashboard', <DashboardPage />);
 
     await user.click(await screen.findByRole('button', { name: /Expiring in 30 days/ }));
-    expect(await screen.findByText('Amex Gold · •••• 1001')).toBeInTheDocument();
-    expect(screen.getByText(/Dining credit · Ends/)).toBeInTheDocument();
+    const expirationPanel = screen.getByRole('region', { name: 'Expiring in 30 days' });
+    expect(within(expirationPanel).getByText('Dining credit')).toBeInTheDocument();
+    expect(screen.getByText('Amex Gold · •••• 1001')).toBeInTheDocument();
+    expect(screen.getByText(/Ends Feb 29, 2028/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resy' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Resy' }));
-    expect(screen.getByRole('dialog', { name: 'Resy benefit details' })).toHaveTextContent(
+    await user.click(screen.getByRole('button', { name: 'Eligible merchants' }));
+    expect(screen.getByRole('dialog', { name: 'Eligible merchant details' })).toHaveTextContent(
       'Dining',
     );
-    expect(screen.getByRole('link', { name: 'Open website' })).toHaveAttribute(
-      'href',
-      'https://resy.com',
+    expect(screen.getByRole('dialog', { name: 'Eligible merchant details' })).toHaveTextContent(
+      'Use at participating U.S. restaurants.',
     );
+    expect(screen.getByRole('link', { name: 'Open eligible website' })).toHaveAttribute(
+      'href',
+      'https://americanexpress.com',
+    );
+  });
+
+  it('uses an account nickname instead of the generated card name', async () => {
+    api.listAccounts.mockResolvedValue([
+      {
+        id: '44444444-4444-4444-8444-444444444444',
+        display_name: 'American Express Gold Card — Personal',
+        issuer: 'American Express',
+        card_service_name: 'Gold Card',
+        nickname: 'Travel rewards card',
+        last_four: null,
+      },
+    ]);
+    api.listInstances.mockResolvedValue([benefitInstance({ merchant: null })]);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    expect(await screen.findByText('Travel rewards card')).toBeInTheDocument();
+    expect(screen.queryByText('Amex Gold')).not.toBeInTheDocument();
+  });
+
+  it('does not show an empty eligible-merchants popover', async () => {
+    api.listInstances.mockResolvedValue([
+      benefitInstance({
+        merchant: null,
+        merchant_category: null,
+        eligibility_notes: null,
+        website: null,
+      }),
+    ]);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    expect(
+      await screen.findByRole('link', { name: '$15 monthly rideshare credit' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Eligible merchants' })).not.toBeInTheDocument();
   });
 
   it('uses the saved profile timezone for new benefit and redemption dates', async () => {
@@ -488,7 +541,7 @@ describe('authenticated core flows', () => {
     );
   });
 
-  it('distinguishes missed, seven-day, and thirty-day enrollment attention', async () => {
+  it('does not show enrollment reminders on the dashboard', async () => {
     api.listInstances.mockResolvedValue([
       benefitInstance({
         instance_id: '10000000-0000-4000-8000-000000000001',
@@ -508,9 +561,11 @@ describe('authenticated core flows', () => {
     ]);
     renderRoute('/dashboard', '/dashboard', <DashboardPage />);
 
-    expect(await screen.findByText(/Enrollment overdue/)).toBeInTheDocument();
-    expect(screen.getByText(/Enrollment due within 7 days/)).toBeInTheDocument();
-    expect(screen.getByText(/Enrollment due in 8–30 days/)).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Missed enrollment' })).toBeInTheDocument();
+    expect(screen.queryByText(/Enrollment overdue/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Enrollment due within 7 days/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Enrollment due in 8–30 days/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Other reminders/)).not.toBeInTheDocument();
   });
 
   it('labels superseded period versions without selecting a void row as current', async () => {

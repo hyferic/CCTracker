@@ -16,10 +16,12 @@ export function BenefitTable({
   instances,
   onConfirmUsed,
   confirmingInstanceId,
+  accountLabel,
 }: {
   instances: BenefitInstance[];
   onConfirmUsed?: (instance: BenefitInstance) => void;
   confirmingInstanceId?: string | null;
+  accountLabel?: (instance: BenefitInstance) => string;
 }) {
   return (
     <div className="table-wrap">
@@ -48,8 +50,11 @@ export function BenefitTable({
                   {instance.benefit_name}
                 </Link>
                 <span className="cell-subtitle">
-                  {instance.account_display_name ?? instance.issuer ?? 'Unassigned'} ·{' '}
-                  {instance.category}
+                  {accountLabel?.(instance) ??
+                    instance.account_display_name ??
+                    instance.issuer ??
+                    'Unassigned'}{' '}
+                  · {instance.category}
                 </span>
                 {instance.is_audit_version && (
                   <span className="mini-status mini-status--danger">
