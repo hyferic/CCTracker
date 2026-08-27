@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { BenefitTable } from '../components/BenefitTable';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
 import { formatDate } from '../domain/dates';
+import { attentionScore } from '../domain/status';
 import { formatQuantity } from '../domain/money';
 import { useBusinessDate } from '../features/profile/ProfileContext';
 import { useAsync } from '../hooks/useAsync';
