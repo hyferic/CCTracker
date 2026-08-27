@@ -430,6 +430,42 @@ describe('authenticated core flows', () => {
     expect(screen.queryByText('Navigation complete')).not.toBeInTheDocument();
   });
 
+  it('opens an expiration highlight with compact card details and merchant guidance', async () => {
+    const user = userEvent.setup();
+    api.listAccounts.mockResolvedValue([
+      {
+        id: '44444444-4444-4444-8444-444444444444',
+        display_name: 'Amex Gold',
+        last_four: '1001',
+      },
+    ]);
+    api.listInstances.mockResolvedValue([
+      benefitInstance({
+        benefit_name: 'Dining credit',
+        merchant: 'Resy',
+        merchant_category: 'Dining',
+        website: 'https://resy.com',
+        days_remaining: 20,
+        expiring_7_days: false,
+        expiring_30_days: true,
+      }),
+    ]);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    await user.click(await screen.findByRole('button', { name: /Expiring in 30 days/ }));
+    expect(await screen.findByText('Amex Gold · •••• 1001')).toBeInTheDocument();
+    expect(screen.getByText(/Dining credit · Ends/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Resy' }));
+    expect(screen.getByRole('dialog', { name: 'Resy benefit details' })).toHaveTextContent(
+      'Dining',
+    );
+    expect(screen.getByRole('link', { name: 'Open website' })).toHaveAttribute(
+      'href',
+      'https://resy.com',
+    );
+  });
+
   it('uses the saved profile timezone for new benefit and redemption dates', async () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2028-01-01T10:30:00Z'));
     const pacificProfile = profileFixture({ timezone: 'Pacific/Kiritimati' });

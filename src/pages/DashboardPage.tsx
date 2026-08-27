@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BenefitTable } from '../components/BenefitTable';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
-import { attentionLabel, attentionScore } from '../domain/status';
-import { availableByCurrency, formatQuantity } from '../domain/money';
+import { formatDate } from '../domain/dates';
+import { formatQuantity } from '../domain/money';
 import { useBusinessDate } from '../features/profile/ProfileContext';
 import { useAsync } from '../hooks/useAsync';
 import {
@@ -83,10 +83,20 @@ function filterInstances(instances: BenefitInstance[], filters: DashboardFilters
   });
 }
 
+type ExpirationBucket = '7' | '30' | 'month';
+
+const expirationBucketLabels: Record<ExpirationBucket, string> = {
+  '7': 'Expiring in 7 days',
+  '30': 'Expiring in 30 days',
+  month: 'Expiring this month',
+};
+
 export function DashboardPage() {
   const [filters, setFilters] = useState(initialFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [view, setView] = useState<'all' | 'month'>('all');
+  const [expirationBucket, setExpirationBucket] = useState<ExpirationBucket>('7');
+  const [merchantInstanceId, setMerchantInstanceId] = useState<string | null>(null);
   const [confirmingInstanceId, setConfirmingInstanceId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -126,11 +136,23 @@ export function DashboardPage() {
   const active = instances.filter(
     (item) => item.is_live && item.lifecycle_status === 'active' && item.definition_active,
   );
-  const currencyTotals = availableByCurrency(active);
-  const attention = active
-    .filter((item) => attentionScore(item) > 0)
-    .sort((a, b) => attentionScore(b) - attentionScore(a))
-    .slice(0, 5);
+  const accountById = useMemo(
+    () => new Map((result.data?.accounts ?? []).map((account) => [account.id, account])),
+    [result.data?.accounts],
+  );
+  const expirationDetails = useMemo(() => {
+    return active
+      .filter((item) => item.usage_status !== 'used')
+      .filter((item) => {
+        if (expirationBucket === '7') return item.days_remaining >= 0 && item.days_remaining <= 7;
+        if (expirationBucket === '30') return item.days_remaining >= 0 && item.days_remaining <= 30;
+        return item.period_end >= monthBounds.start && item.period_end <= monthBounds.end;
+      })
+      .sort(
+        (a, b) =>
+          a.period_end.localeCompare(b.period_end) || a.benefit_name.localeCompare(b.benefit_name),
+      );
+  }, [active, expirationBucket, monthBounds]);
   const categories = [...new Set(instances.map((item) => item.category))].sort();
   const providers = [
     ...new Set(instances.map((item) => item.issuer).filter(Boolean)),
@@ -214,127 +236,121 @@ export function DashboardPage() {
         </EmptyState>
       ) : (
         <>
-          <section className="summary-grid" aria-label="Benefit summary">
-            <article className="summary-card summary-card--primary">
-              <div className="summary-icon" aria-hidden="true">
-                $
-              </div>
-              <p>Available value</p>
-              <strong>
-                {Object.keys(currencyTotals).length
-                  ? Object.entries(currencyTotals)
-                      .map(([currency, total]) =>
-                        formatQuantity(total, { valueKind: 'money', currency }),
-                      )
-                      .join(' + ')
-                  : '$0'}
-              </strong>
-              <span>Finite active benefits</span>
-            </article>
-            <article className="summary-card">
-              <div className="summary-icon summary-icon--danger" aria-hidden="true">
-                !
-              </div>
-              <p>Expiring in 7 days</p>
-              <strong>
-                {
-                  active.filter((item) => item.expiring_7_days && item.usage_status !== 'used')
-                    .length
-                }
-              </strong>
-              <span>
-                {active.filter((item) => item.expiring_7_days).length
-                  ? 'Action recommended'
-                  : 'Nothing urgent'}
-              </span>
-            </article>
-            <article className="summary-card">
-              <div className="summary-icon summary-icon--amber" aria-hidden="true">
-                ◷
-              </div>
-              <p>Expiring in 30 days</p>
-              <strong>
-                {
-                  active.filter((item) => item.expiring_30_days && item.usage_status !== 'used')
-                    .length
-                }
-              </strong>
-              <span>Including 7-day items</span>
-            </article>
-            <article className="summary-card">
-              <div className="summary-icon summary-icon--blue" aria-hidden="true">
-                ∞
-              </div>
-              <p>Uncapped offers</p>
-              <strong>
-                {
-                  active.filter(
-                    (item) =>
-                      item.available_quantity === null && item.value_kind === 'percentage_cashback',
-                  ).length
-                }
-              </strong>
-              <span>
-                {active.filter((item) => item.usage_status === 'unused').length} unused benefit
-                periods
-              </span>
-            </article>
-          </section>
-          {attention.length > 0 && (
-            <section className="panel attention-panel">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Needs attention</p>
-                  <h2>Act before these deadlines</h2>
-                </div>
+          <section className="summary-grid" aria-label="Benefit expiration highlights">
+            {(['7', '30', 'month'] as ExpirationBucket[]).map((bucket) => {
+              const count = active.filter((item) => {
+                if (item.usage_status === 'used') return false;
+                if (bucket === '7') return item.days_remaining >= 0 && item.days_remaining <= 7;
+                if (bucket === '30') return item.days_remaining >= 0 && item.days_remaining <= 30;
+                return item.period_end >= monthBounds.start && item.period_end <= monthBounds.end;
+              }).length;
+              return (
                 <button
-                  className="text-button"
-                  onClick={() => setFilters({ ...initialFilters, expiration: '30' })}
+                  className={`summary-card ${expirationBucket === bucket ? 'summary-card--selected' : ''}`}
+                  type="button"
+                  key={bucket}
+                  aria-pressed={expirationBucket === bucket}
+                  onClick={() => {
+                    setExpirationBucket(bucket);
+                    setMerchantInstanceId(null);
+                  }}
                 >
-                  View all upcoming
+                  <div className="summary-icon" aria-hidden="true">
+                    {bucket === '7' ? '!' : bucket === '30' ? '◷' : '▦'}
+                  </div>
+                  <p>{expirationBucketLabels[bucket]}</p>
+                  <strong>{count}</strong>
+                  <span>{count ? 'Tap to review benefits' : 'Nothing due'}</span>
                 </button>
+              );
+            })}
+          </section>
+          <section className="panel attention-panel" aria-labelledby="attention-heading">
+            <div className="section-head">
+              <div>
+                <p className="eyebrow">Needs attention</p>
+                <h2 id="attention-heading">{expirationBucketLabels[expirationBucket]}</h2>
               </div>
+              <button
+                className="text-button"
+                type="button"
+                onClick={() =>
+                  setFilters({
+                    ...initialFilters,
+                    expiration: expirationBucket === '7' ? '7' : '30',
+                  })
+                }
+              >
+                View in all benefits
+              </button>
+            </div>
+            {expirationDetails.length === 0 ? (
+              <div className="attention-empty">No unused benefits are due in this period.</div>
+            ) : (
               <div className="attention-list">
-                {attention.map((item) => (
-                  <div className="attention-item" key={item.instance_id}>
-                    <span
-                      className={`attention-dot ${item.expiring_7_days || item.enrollment_missed || item.enrollment_due_7_days ? 'attention-dot--danger' : ''}`}
-                      aria-hidden="true"
-                    />
-                    <Link className="attention-copy" to={`/instances/${item.instance_id}`}>
-                      <strong>{item.benefit_name}</strong>
-                      <small>
-                        {attentionLabel(item)} ·{' '}
-                        {item.account_display_name ?? item.issuer ?? 'Unassigned'}
-                      </small>
-                    </Link>
-                    <span className="attention-value">
-                      {formatQuantity(item.remaining_quantity, {
-                        valueKind: item.value_kind,
-                        currency: item.currency,
-                        unitLabel: item.unit_label,
-                      })}
-                    </span>
-                    {item.expiring_7_days && (
+                {expirationDetails.map((item) => {
+                  const account = item.account_id ? accountById.get(item.account_id) : undefined;
+                  const cardLabel =
+                    account?.display_name ??
+                    item.account_display_name ??
+                    item.issuer ??
+                    'Unassigned';
+                  return (
+                    <div className="attention-item" key={item.instance_id}>
+                      <Link className="attention-copy" to={`/instances/${item.instance_id}`}>
+                        <strong>
+                          {cardLabel}
+                          {account?.last_four ? ` · •••• ${account.last_four}` : ''}
+                        </strong>
+                        <small>
+                          {item.benefit_name} · Ends {formatDate(item.period_end)}
+                        </small>
+                      </Link>
+                      {item.merchant && (
+                        <div className="merchant-popover-wrap">
+                          <button
+                            className="merchant-button"
+                            type="button"
+                            aria-expanded={merchantInstanceId === item.instance_id}
+                            onClick={() =>
+                              setMerchantInstanceId((current) =>
+                                current === item.instance_id ? null : item.instance_id,
+                              )
+                            }
+                          >
+                            {item.merchant}
+                          </button>
+                          {merchantInstanceId === item.instance_id && (
+                            <div
+                              className="merchant-popover"
+                              role="dialog"
+                              aria-label={`${item.merchant} benefit details`}
+                            >
+                              <strong>{item.merchant}</strong>
+                              {item.merchant_category && <span>{item.merchant_category}</span>}
+                              {item.website && (
+                                <a href={item.website} target="_blank" rel="noreferrer">
+                                  Open website
+                                </a>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <button
-                        className="text-link"
+                        className="text-link attention-confirm"
                         type="button"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          void confirmUsed(item);
-                        }}
+                        onClick={() => void confirmUsed(item)}
                         disabled={confirmingInstanceId === item.instance_id}
                       >
                         {confirmingInstanceId === item.instance_id ? 'Saving…' : 'Mark period used'}
                       </button>
-                    )}
-                    <span aria-hidden="true">›</span>
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
-            </section>
-          )}
+            )}
+          </section>
           <section className="panel">
             <div className="section-head section-head--wrap">
               <div>
