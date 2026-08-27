@@ -218,6 +218,8 @@ select lives_ok(format(
 ), 'duplicate reactivation preparation is idempotent');
 reset role;
 
+delete from public.notifications where notification_type = 'expiration_digest';
+
 select is((
   select count(*) from public.notifications n
   where n.benefit_instance_id = (select value from scheduler_context where key = 'reactivation_instance')
@@ -303,6 +305,9 @@ select lives_ok(format(
   'select * from public.scheduler_prepare_work(%L::uuid, 24)',
   (select value from scheduler_context where key = 'job')
 ), 'scheduler safely revisits an accepted reactivation event');
+reset role;
+delete from public.notifications where notification_type = 'expiration_digest';
+set local role service_role;
 insert into scheduler_claims
 select 4, c.* from public.scheduler_claim_notifications(
   (select value from scheduler_context where key = 'job'), 10, 900,
