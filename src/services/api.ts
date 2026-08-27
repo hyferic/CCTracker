@@ -441,6 +441,16 @@ export async function markFiniteUsed(
   return mapRedemption(data);
 }
 
+export async function confirmBenefitPeriodUsed(instanceId: string, usedOn: string, note?: string) {
+  const { data, error } = await requireSupabase().rpc('confirm_benefit_period_used', {
+    p_instance_id: instanceId,
+    p_used_date: usedOn,
+    p_note: note ?? null,
+  });
+  fail(error);
+  return data as { instance_id: string; archived: boolean; generated_instances: number };
+}
+
 export async function markBenefitEnrolled(definitionId: string, enrolledAt: string) {
   const { data, error } = await requireSupabase().rpc('edit_benefit', {
     p_definition_id: definitionId,

@@ -9,8 +9,7 @@ import { useAsync } from '../hooks/useAsync';
 import {
   listAccounts,
   listInstances,
-  markFiniteUsed,
-  markUncappedComplete,
+  confirmBenefitPeriodUsed,
   schedulerHealth,
 } from '../services/api';
 import type { BenefitInstance, DashboardFilters } from '../types';
@@ -160,12 +159,12 @@ export function DashboardPage() {
     setActionMessage(null);
     setActionError(null);
     try {
-      if (instance.available_quantity === null) {
-        await markUncappedComplete(instance.instance_id, 'Confirmed used from dashboard.');
-      } else {
-        await markFiniteUsed(instance.instance_id, today);
-      }
-      setActionMessage('Usage confirmed. Expiration reminders are now suppressed for this period.');
+      await confirmBenefitPeriodUsed(instance.instance_id, today, 'Confirmed used from dashboard.');
+      setActionMessage(
+        instance.recurrence_type === 'one_time'
+          ? 'Usage confirmed and the one-time benefit was archived.'
+          : 'Usage confirmed. The next benefit period is ready when available.',
+      );
       result.refresh();
     } catch (caught) {
       setActionError(caught instanceof Error ? caught.message : 'Could not confirm usage.');
@@ -297,22 +296,18 @@ export function DashboardPage() {
               </div>
               <div className="attention-list">
                 {attention.map((item) => (
-                  <Link
-                    to={`/instances/${item.instance_id}`}
-                    className="attention-item"
-                    key={item.instance_id}
-                  >
+                  <div className="attention-item" key={item.instance_id}>
                     <span
                       className={`attention-dot ${item.expiring_7_days || item.enrollment_missed || item.enrollment_due_7_days ? 'attention-dot--danger' : ''}`}
                       aria-hidden="true"
                     />
-                    <span className="attention-copy">
+                    <Link className="attention-copy" to={`/instances/${item.instance_id}`}>
                       <strong>{item.benefit_name}</strong>
                       <small>
                         {attentionLabel(item)} ·{' '}
                         {item.account_display_name ?? item.issuer ?? 'Unassigned'}
                       </small>
-                    </span>
+                    </Link>
                     <span className="attention-value">
                       {formatQuantity(item.remaining_quantity, {
                         valueKind: item.value_kind,
@@ -320,8 +315,22 @@ export function DashboardPage() {
                         unitLabel: item.unit_label,
                       })}
                     </span>
+                    {item.expiring_7_days && (
+                      <button
+                        className="text-link"
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void confirmUsed(item);
+                        }}
+                        disabled={confirmingInstanceId === item.instance_id}
+                      >
+                        {confirmingInstanceId === item.instance_id ? 'Saving…' : 'Mark period used'}
+                      </button>
+                    )}
                     <span aria-hidden="true">›</span>
-                  </Link>
+                  </div>
                 ))}
               </div>
             </section>

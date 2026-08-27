@@ -33,6 +33,7 @@ const api = vi.hoisted(() => ({
   listRedemptions: vi.fn(),
   markBenefitEnrolled: vi.fn(),
   markUncappedComplete: vi.fn(),
+  confirmBenefitPeriodUsed: vi.fn(),
   overrideInstance: vi.fn(),
   recordRedemption: vi.fn(),
   schedulerHealth: vi.fn(),
@@ -102,6 +103,11 @@ beforeEach(() => {
     failed_count: 0,
     requires_review_count: 0,
     is_stale: false,
+  });
+  api.confirmBenefitPeriodUsed.mockResolvedValue({
+    instance_id: '11111111-1111-4111-8111-111111111111',
+    archived: false,
+    generated_instances: 1,
   });
   api.createBenefit.mockResolvedValue({
     definition_id: '22222222-2222-4222-8222-222222222222',
@@ -404,6 +410,24 @@ describe('authenticated core flows', () => {
     await user.click(screen.getByRole('button', { name: 'Filter' }));
     expect(screen.getByLabelText('Merchant')).toBeInTheDocument();
     expect(screen.getByLabelText('Definition status')).toHaveValue('active');
+  });
+
+  it('confirms an expiring attention item without navigating away', async () => {
+    const user = userEvent.setup();
+    api.listInstances.mockResolvedValue([benefitInstance()]);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    const button = await screen.findByRole('button', { name: 'Mark period used' });
+    await user.click(button);
+
+    await waitFor(() =>
+      expect(api.confirmBenefitPeriodUsed).toHaveBeenCalledWith(
+        '11111111-1111-4111-8111-111111111111',
+        expect.any(String),
+        'Confirmed used from dashboard.',
+      ),
+    );
+    expect(screen.queryByText('Navigation complete')).not.toBeInTheDocument();
   });
 
   it('uses the saved profile timezone for new benefit and redemption dates', async () => {
