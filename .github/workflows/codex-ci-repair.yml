@@ -1,0 +1,229 @@
+name: Codex CI Repair
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: codex-ci-repair-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Diagnose and repair failed CI
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Decide whether this commit needs a repair attempt
+        id: eligibility
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          short_sha="${RUN_SHA:0:12}"
+          fix_branch="codex/ci-fix-${short_sha}"
+          echo "fix_branch=$fix_branch" >> "$GITHUB_OUTPUT"
+
+          existing_prs="$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --head "$fix_branch" \
+            --state all \
+            --json number \
+            --jq 'length')"
+          branch_exists=false
+          if gh api --silent \
+            "repos/$GITHUB_REPOSITORY/git/ref/heads/$fix_branch" >/dev/null 2>&1; then
+            branch_exists=true
+          fi
+
+          if [[ "$existing_prs" -gt 0 || "$branch_exists" == true ]]; then
+            echo "A repair branch or PR already exists for $RUN_SHA; skipping." >&2
+            echo "should_repair=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_repair=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the exact failed commit
+        if: steps.eligibility.outputs.should_repair == 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.RUN_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node
+        if: steps.eligibility.outputs.should_repair == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20.19.4
+          cache: npm
+
+      - name: Install exact dependencies for validation
+        if: steps.eligibility.outputs.should_repair == 'true'
+        run: npm ci
+
+      - name: Capture failed CI logs for Codex
+        if: steps.eligibility.outputs.should_repair == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p .ci-autofix
+          gh run view "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,headBranch,headSha,event,status,conclusion,workflowName,createdAt,updatedAt,url \
+            > .ci-autofix/ci-run.json
+
+          raw_log="$RUNNER_TEMP/ci-failure.raw.log"
+          if ! gh run view "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --log-failed > "$raw_log"; then
+            gh run view "$RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --log > "$raw_log" || true
+          fi
+
+          if [[ ! -s "$raw_log" ]]; then
+            echo "GitHub returned no textual job log for this failed run." > "$raw_log"
+          fi
+
+          # Keep the prompt input bounded while retaining the end of the failed log,
+          # where GitHub Actions normally reports the actual error.
+          tail -c 250000 "$raw_log" > .ci-autofix/ci-failure.log
+
+      - name: Run Codex repair agent
+        id: codex
+        if: steps.eligibility.outputs.should_repair == 'true'
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ':workspace'
+          output-file: .ci-autofix/codex-final-message.md
+          prompt: |
+            You are repairing a failed GitHub Actions CI run in this repository.
+
+            First read:
+            - .ci-autofix/ci-run.json
+            - .ci-autofix/ci-failure.log
+            - the repository instructions and relevant source files
+
+            The failed run is ${{ github.event.workflow_run.html_url }} for commit ${{ github.event.workflow_run.head_sha }}.
+
+            Diagnose the actual root cause before editing. If this is an infrastructure,
+            provider, network, Docker registry, timeout, or transient runner failure,
+            do not change application code; explain that no safe code repair is justified.
+            For a real repository defect, make the smallest correct change necessary.
+
+            Rules:
+            - Modify only files needed to fix the failure.
+            - Do not change secrets, credentials, deployment targets, branch protection,
+              or this repair workflow.
+            - Do not commit, push, merge, or create a pull request; the workflow handles that.
+            - Do not weaken tests, security checks, permissions, or lint rules to make CI pass.
+            - Run focused validation after editing when dependencies and the environment allow it.
+            - Clearly summarize the diagnosis, files changed, and validation in your final message.
+
+      - name: Remove generated diagnostics and detect a code change
+        id: changes
+        if: steps.eligibility.outputs.should_repair == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .ci-autofix/ci-run.json .ci-autofix/ci-failure.log
+
+          if [[ -z "$(git status --short)" ]]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "sql_changes=false" >> "$GITHUB_OUTPUT"
+            echo "Codex made no repository changes; no repair PR will be created."
+          else
+            git diff --check
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            changed_files="$(
+              git diff --name-only
+              git ls-files --others --exclude-standard
+            )"
+            if printf '%s\n' "$changed_files" | rg -q '^supabase/(migrations|tests)/|^supabase/seed\.sql$|^supabase/config\.toml$'; then
+              echo "sql_changes=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "sql_changes=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Validate repaired repository
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          node scripts/check-secrets.mjs
+          node scripts/check-release-order.mjs
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Validate repaired SQL changes
+        if: steps.changes.outputs.has_changes == 'true' && steps.changes.outputs.sql_changes == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'npm exec -- supabase stop --no-backup || true' EXIT
+          npm exec -- supabase start
+          npm exec -- supabase db lint --local --fail-on error
+          npm run test:sql
+
+      - name: Create repair branch and pull request
+        if: steps.changes.outputs.has_changes == 'true'
+        shell: bash
+        env:
+          FIX_BRANCH: ${{ steps.eligibility.outputs.fix_branch }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$FIX_BRANCH"
+          git add -A
+          git commit -m "fix: repair CI failure for ${RUN_SHA:0:12}"
+
+          gh auth setup-git
+          git push --set-upstream origin "$FIX_BRANCH"
+
+          {
+            echo "## Automated CI repair"
+            echo
+            echo "Codex created this PR after diagnosing a failed CI run on commit $RUN_SHA."
+            echo
+            echo "- Failed run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
+            echo "- Repair branch: $FIX_BRANCH"
+            echo "- Validation: format, lint, typecheck, unit tests, and production build"
+            echo
+            echo "### Codex report"
+            echo
+            if [[ -s .ci-autofix/codex-final-message.md ]]; then
+              cat .ci-autofix/codex-final-message.md
+            else
+              echo "Codex changed the repository but did not return a final report."
+            fi
+          } > "$RUNNER_TEMP/codex-pr-body.md"
+
+          gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --head "$FIX_BRANCH" \
+            --title "fix: repair CI failure for ${RUN_SHA:0:12}" \
+            --body-file "$RUNNER_TEMP/codex-pr-body.md"
