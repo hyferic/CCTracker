@@ -67,11 +67,11 @@ select lives_ok(format(
   (select value from scheduler_context where key = 'job')
 ), 'repeated preparation is idempotent');
 
+reset role;
 -- This file verifies the legacy single-benefit event contract. The daily digest
 -- has its own contract test and is intentionally removed from this fixture.
 delete from public.notifications where notification_type = 'expiration_digest';
 
-reset role;
 select is((
   select count(*) from public.notifications n
   where n.benefit_instance_id = (select value from scheduler_context where key = 'instance')
