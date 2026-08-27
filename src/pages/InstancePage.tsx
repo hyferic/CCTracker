@@ -262,12 +262,12 @@ export function InstancePage() {
             className="button button--secondary"
             onClick={() => openRedemption(undefined, true)}
           >
-            Mark used
+            Confirm used
           </button>
         )}
         {!finite && instance.lifecycle_status === 'active' && instance.usage_status !== 'used' && (
           <button className="button button--secondary" onClick={() => void markComplete()}>
-            Mark complete
+            Confirm used
           </button>
         )}
         {instance.enrollment_required && !instance.enrolled_at && (

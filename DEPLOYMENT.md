@@ -233,9 +233,10 @@ Perform these in order:
 13. Run Actions → **Manual Notification Recovery** with `health`; confirm no email is sent and a minimal healthy response appears.
 14. Run `process` twice/concurrently using confirmation `PROCESS`. Confirm one instance, one logical event, one provider-accepted message/idempotency key, and a fresh heartbeat.
 15. Inspect the Resend record and verify subject/body values. Remember provider acceptance is not guaranteed delivery.
-16. Mark a benefit used before its reminder date and confirm it is skipped.
-17. Simulate a slow/failed provider request in a non-production test project; confirm timeout/retry/review state is visible and other events proceed.
-18. Refresh, close/reopen, and redeploy Pages; confirm data persists.
+16. Open Dashboard → **Due this month**, use **Confirm used** on an active benefit, and confirm its balance/status updates and future expiration digest candidates are suppressed.
+17. Create two benefits expiring within seven days, run the scheduler, and confirm one daily digest email contains both benefits and that rerunning it the same local day does not create a duplicate.
+18. Simulate a slow/failed provider request in a non-production test project; confirm timeout/retry/review state is visible and other events proceed.
+19. Refresh, close/reopen, and redeploy Pages; confirm data persists.
 19. Test JSON export, encrypt/store it off-repository, validate import preview, and perform a `suppress_current` full-history restore drill in a disposable project.
 20. Download the CSV import template. Add one `account` row and one linked `definition` row using `source_id`/`account_source_id` and pipe-delimited tags, preview/import it, and confirm the definition receives usable periods. Then introduce a bad reference and confirm the entire import rolls back. Do not use the separate flattened analysis exports as import templates.
 21. Export CSV containing text beginning with `=`, `+`, `-`, and `@`; confirm spreadsheet applications display it as text while an actual negative numeric value stays numeric.

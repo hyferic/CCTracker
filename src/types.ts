@@ -232,8 +232,8 @@ export interface SchedulerHealth {
 
 export interface NotificationRecord {
   id: string;
-  benefit_instance_id: string;
-  notification_type: 'expiration_7_day' | 'reactivation';
+  benefit_instance_id: string | null;
+  notification_type: 'expiration_7_day' | 'expiration_digest' | 'reactivation';
   state: string;
   scheduled_for: string;
   provider_message_id: string | null;

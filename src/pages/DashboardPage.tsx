@@ -4,8 +4,15 @@ import { BenefitTable } from '../components/BenefitTable';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
 import { attentionLabel, attentionScore } from '../domain/status';
 import { availableByCurrency, formatQuantity } from '../domain/money';
+import { useBusinessDate } from '../features/profile/ProfileContext';
 import { useAsync } from '../hooks/useAsync';
-import { listAccounts, listInstances, schedulerHealth } from '../services/api';
+import {
+  listAccounts,
+  listInstances,
+  markFiniteUsed,
+  markUncappedComplete,
+  schedulerHealth,
+} from '../services/api';
 import type { BenefitInstance, DashboardFilters } from '../types';
 
 const initialFilters: DashboardFilters = {
@@ -80,6 +87,11 @@ function filterInstances(instances: BenefitInstance[], filters: DashboardFilters
 export function DashboardPage() {
   const [filters, setFilters] = useState(initialFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [view, setView] = useState<'all' | 'month'>('all');
+  const [confirmingInstanceId, setConfirmingInstanceId] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const { today } = useBusinessDate();
   const includeAuditVersions = filters.audit !== 'live';
   const result = useAsync(async () => {
     const [instances, accounts, health] = await Promise.all([
@@ -91,7 +103,27 @@ export function DashboardPage() {
   }, [includeAuditVersions]);
 
   const instances = useMemo(() => result.data?.instances ?? [], [result.data?.instances]);
-  const filtered = useMemo(() => filterInstances(instances, filters), [instances, filters]);
+  const monthBounds = useMemo(() => {
+    const parts = today.split('-').map(Number);
+    const year = Number(parts[0]);
+    const month = Number(parts[1]);
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return {
+      start: `${today.slice(0, 8)}01`,
+      end: `${today.slice(0, 8)}${String(lastDay).padStart(2, '0')}`,
+    };
+  }, [today]);
+  const filtered = useMemo(() => {
+    const base = filterInstances(instances, filters);
+    if (view === 'all') return base;
+    return base.filter(
+      (item) =>
+        item.is_live &&
+        item.lifecycle_status === 'active' &&
+        item.period_end >= monthBounds.start &&
+        item.period_end <= monthBounds.end,
+    );
+  }, [instances, filters, monthBounds, view]);
   const active = instances.filter(
     (item) => item.is_live && item.lifecycle_status === 'active' && item.definition_active,
   );
@@ -112,6 +144,36 @@ export function DashboardPage() {
       !(key === 'audit' && value === 'live'),
   ).length;
 
+  async function confirmUsed(instance: BenefitInstance) {
+    const amount = formatQuantity(instance.remaining_quantity, {
+      valueKind: instance.value_kind,
+      currency: instance.currency,
+      unitLabel: instance.unit_label,
+    });
+    if (
+      !window.confirm(
+        `Confirm that you used the remaining ${amount} of “${instance.benefit_name}”?`,
+      )
+    )
+      return;
+    setConfirmingInstanceId(instance.instance_id);
+    setActionMessage(null);
+    setActionError(null);
+    try {
+      if (instance.available_quantity === null) {
+        await markUncappedComplete(instance.instance_id, 'Confirmed used from dashboard.');
+      } else {
+        await markFiniteUsed(instance.instance_id, today);
+      }
+      setActionMessage('Usage confirmed. Expiration reminders are now suppressed for this period.');
+      result.refresh();
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : 'Could not confirm usage.');
+    } finally {
+      setConfirmingInstanceId(null);
+    }
+  }
+
   if (result.error) return <ErrorState error={result.error} onRetry={result.refresh} />;
 
   return (
@@ -121,6 +183,11 @@ export function DashboardPage() {
           <strong>Reminder processing needs attention.</strong>
           <span>No successful scheduler run has been recorded in more than 36 hours.</span>
           <Link to="/settings">View recovery steps</Link>
+        </div>
+      )}
+      {(actionMessage || actionError) && (
+        <div className={`alert ${actionError ? 'alert--danger' : 'alert--success'}`} role="status">
+          {actionMessage ?? actionError}
         </div>
       )}
       <section className="welcome-row">
@@ -262,8 +329,24 @@ export function DashboardPage() {
           <section className="panel">
             <div className="section-head section-head--wrap">
               <div>
-                <p className="eyebrow">All benefit periods</p>
+                <p className="eyebrow">Benefit views</p>
                 <h2>{filtered.length} shown</h2>
+              </div>
+              <div className="toolbar">
+                <button
+                  className={`button button--secondary ${view === 'all' ? 'button--active' : ''}`}
+                  type="button"
+                  onClick={() => setView('all')}
+                >
+                  All periods
+                </button>
+                <button
+                  className={`button button--secondary ${view === 'month' ? 'button--active' : ''}`}
+                  type="button"
+                  onClick={() => setView('month')}
+                >
+                  Due this month
+                </button>
               </div>
               <div className="toolbar">
                 <label className="search-field">
@@ -473,7 +556,11 @@ export function DashboardPage() {
               </div>
             )}
             {filtered.length ? (
-              <BenefitTable instances={filtered} />
+              <BenefitTable
+                instances={filtered}
+                onConfirmUsed={confirmUsed}
+                confirmingInstanceId={confirmingInstanceId}
+              />
             ) : (
               <EmptyState title="No benefits match these filters">
                 <button className="text-button" onClick={() => setFilters(initialFilters)}>

@@ -1592,6 +1592,7 @@ begin
   generated_instances := v_legacy.generated_instances + v_generated;
   scheduled_notifications := v_legacy.scheduled_notifications + v_rows;
   skipped_notifications := v_legacy.skipped_notifications + v_new_rows;
+  perform private.schedule_expiration_digests();
   update private.job_runs j
   set counts = j.counts || jsonb_build_object(
     'generated_instances', generated_instances,

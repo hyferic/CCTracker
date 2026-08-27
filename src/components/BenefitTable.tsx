@@ -12,7 +12,15 @@ function valueLabel(instance: BenefitInstance, value: number | null) {
   });
 }
 
-export function BenefitTable({ instances }: { instances: BenefitInstance[] }) {
+export function BenefitTable({
+  instances,
+  onConfirmUsed,
+  confirmingInstanceId,
+}: {
+  instances: BenefitInstance[];
+  onConfirmUsed?: (instance: BenefitInstance) => void;
+  confirmingInstanceId?: string | null;
+}) {
   return (
     <div className="table-wrap">
       <table className="benefit-table">
@@ -88,6 +96,19 @@ export function BenefitTable({ instances }: { instances: BenefitInstance[] }) {
                 </strong>
               </td>
               <td>
+                {onConfirmUsed &&
+                  instance.lifecycle_status === 'active' &&
+                  instance.usage_status !== 'used' &&
+                  instance.is_live && (
+                    <button
+                      className="text-link"
+                      type="button"
+                      onClick={() => onConfirmUsed(instance)}
+                      disabled={confirmingInstanceId === instance.instance_id}
+                    >
+                      {confirmingInstanceId === instance.instance_id ? 'Saving…' : 'Confirm used'}
+                    </button>
+                  )}
                 <Link className="text-link" to={`/instances/${instance.instance_id}`}>
                   View
                 </Link>

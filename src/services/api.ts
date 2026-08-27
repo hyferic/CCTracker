@@ -421,6 +421,26 @@ export async function markUncappedComplete(instanceId: string, note: string | nu
   fail(error);
 }
 
+export async function markFiniteUsed(
+  instanceId: string,
+  usedOn: string,
+  details?: {
+    merchant?: string | null;
+    transaction_description?: string | null;
+    notes?: string | null;
+  },
+) {
+  const { data, error } = await requireSupabase().rpc('mark_finite_used', {
+    p_instance_id: instanceId,
+    p_used_date: usedOn,
+    p_merchant: details?.merchant ?? null,
+    p_transaction_description: details?.transaction_description ?? null,
+    p_notes: details?.notes ?? null,
+  });
+  fail(error);
+  return mapRedemption(data);
+}
+
 export async function markBenefitEnrolled(definitionId: string, enrolledAt: string) {
   const { data, error } = await requireSupabase().rpc('edit_benefit', {
     p_definition_id: definitionId,
