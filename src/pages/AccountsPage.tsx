@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
+import { Icon } from '../components/Icon';
 import { formatDate } from '../domain/dates';
 import { formatQuantity } from '../domain/money';
 import { accountInputSchema } from '../domain/validation';
@@ -346,7 +347,7 @@ export function AccountsPage() {
                 </h2>
               </div>
               <button className="icon-button" onClick={() => setEditing(null)} aria-label="Close">
-                ×
+                <Icon name="close" />
               </button>
             </div>
 

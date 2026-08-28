@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ErrorState, SkeletonRows } from '../components/AsyncState';
+import { Icon } from '../components/Icon';
 import { CSV_IMPORT_TEMPLATE, parseCsvImport } from '../domain/csvImport';
 import { formatInstantInTimeZone, validateTimeZone } from '../domain/dates';
 import {
@@ -207,7 +208,9 @@ export function SettingsPage() {
 
       <section className="panel form-section">
         <div className="form-section-title">
-          <span>◷</span>
+          <span aria-hidden="true">
+            <Icon name="clock" />
+          </span>
           <div>
             <h2>Timezone & reminders</h2>
             <p>Date boundaries are calculated in this explicit IANA timezone.</p>
@@ -308,7 +311,9 @@ export function SettingsPage() {
 
       <section className="panel form-section">
         <div className="form-section-title">
-          <span>⌁</span>
+          <span aria-hidden="true">
+            <Icon name="key" />
+          </span>
           <div>
             <h2>Passkey sign-in</h2>
             <p>Use Face ID, Touch ID, or your device passcode instead of opening an email link.</p>
@@ -409,7 +414,9 @@ export function SettingsPage() {
 
       <section className="panel form-section settings-span">
         <div className="form-section-title">
-          <span>⇩</span>
+          <span aria-hidden="true">
+            <Icon name="download" />
+          </span>
           <div>
             <h2>Export & encrypted backup</h2>
             <p>JSON preserves portable history. Flattened CSV files are for analysis.</p>

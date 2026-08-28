@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
+import { Icon } from './Icon';
 
 export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => void }) {
   return (
     <section className="state-card" role="alert">
       <div className="state-icon state-icon--error" aria-hidden="true">
-        !
+        <Icon name="alert" />
       </div>
       <h2>We could not load this information</h2>
       <p>{error.message}</p>
@@ -29,7 +30,7 @@ export function EmptyState({
   return (
     <section className="state-card">
       <div className="state-icon" aria-hidden="true">
-        ◇
+        <Icon name="inbox" />
       </div>
       <h2>{title}</h2>
       <div className="muted">{children}</div>

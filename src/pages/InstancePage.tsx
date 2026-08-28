@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ErrorState, SkeletonRows } from '../components/AsyncState';
+import { Icon } from '../components/Icon';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDate } from '../domain/dates';
 import { formatQuantity } from '../domain/money';
@@ -410,7 +411,9 @@ export function InstancePage() {
         </div>
         {!result.data?.redemptions.length ? (
           <div className="inline-empty">
-            <span aria-hidden="true">◇</span>
+            <span aria-hidden="true">
+              <Icon name="inbox" />
+            </span>
             <p>No usage recorded for this period.</p>
           </div>
         ) : (
@@ -467,7 +470,7 @@ export function InstancePage() {
                 onClick={() => setRedemptionOpen(false)}
                 aria-label="Close"
               >
-                ×
+                <Icon name="close" />
               </button>
             </div>
             <form className="form-stack" onSubmit={(event) => void saveRedemption(event)}>
@@ -568,7 +571,7 @@ export function InstancePage() {
                 onClick={() => setOverrideOpen(false)}
                 aria-label="Close"
               >
-                ×
+                <Icon name="close" />
               </button>
             </div>
             <form className="form-stack" onSubmit={(event) => void saveOverride(event)}>

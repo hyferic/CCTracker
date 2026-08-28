@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Icon } from '../../components/Icon';
 import { useAuth } from './AuthProvider';
 
 export function LoginPage() {
@@ -57,13 +58,22 @@ export function LoginPage() {
           </p>
           <ul className="auth-points">
             <li>
-              <span aria-hidden="true">✓</span> Private, owner-only access
+              <span aria-hidden="true">
+                <Icon name="check" size={13} />
+              </span>
+              Private, owner-only access
             </li>
             <li>
-              <span aria-hidden="true">✓</span> Calendar-correct recurring periods
+              <span aria-hidden="true">
+                <Icon name="check" size={13} />
+              </span>
+              Calendar-correct recurring periods
             </li>
             <li>
-              <span aria-hidden="true">✓</span> Email reminders while you are offline
+              <span aria-hidden="true">
+                <Icon name="check" size={13} />
+              </span>
+              Email reminders while you are offline
             </li>
           </ul>
         </div>
@@ -86,7 +96,7 @@ export function LoginPage() {
           ) : sent ? (
             <div aria-live="polite">
               <div className="success-orb" aria-hidden="true">
-                ✓
+                <Icon name="check" />
               </div>
               <p className="eyebrow">Check your inbox</p>
               <h2>Your secure link is on its way</h2>

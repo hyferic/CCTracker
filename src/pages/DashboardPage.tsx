@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BenefitTable } from '../components/BenefitTable';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
+import { Icon } from '../components/Icon';
 import { formatDate } from '../domain/dates';
 import { attentionScore } from '../domain/status';
 import { formatQuantity } from '../domain/money';
@@ -296,7 +297,9 @@ export function DashboardPage() {
                   }}
                 >
                   <div className="summary-icon" aria-hidden="true">
-                    {bucket === '7' ? '!' : bucket === '30' ? '◷' : '▦'}
+                    <Icon
+                      name={bucket === '7' ? 'alert' : bucket === '30' ? 'clock' : 'calendar'}
+                    />
                   </div>
                   <p>{expirationBucketLabels[bucket]}</p>
                   <strong>{count}</strong>
@@ -411,7 +414,7 @@ export function DashboardPage() {
               <div className="toolbar">
                 <label className="search-field">
                   <span className="sr-only">Search benefits</span>
-                  <span aria-hidden="true">⌕</span>
+                  <Icon name="search" />
                   <input
                     value={filters.query}
                     onChange={(event) => setFilters({ ...filters, query: event.target.value })}
