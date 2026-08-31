@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
+import { PageHeader } from '../components/PageHeader';
 import { formatDate } from '../domain/dates';
 import { formatQuantity } from '../domain/money';
 import { useAsync } from '../hooks/useAsync';
@@ -81,19 +82,16 @@ export function BenefitsPage() {
 
   return (
     <div className="page-stack">
-      <section className="welcome-row">
-        <div>
-          <p className="eyebrow">Definitions & history</p>
-          <h2>Manage benefit rules.</h2>
-          <p className="muted">
-            Definitions describe the rules. Every recurring period stays separate so edits never
-            erase usage history.
-          </p>
-        </div>
-        <Link className="button button--primary" to="/benefits/new">
-          + Add benefit
-        </Link>
-      </section>
+      <PageHeader
+        eyebrow="Definitions & history"
+        title="Manage benefit rules."
+        description="Definitions describe the rules. Every recurring period stays separate so edits never erase usage history."
+        action={
+          <Link className="button button--primary" to="/benefits/new">
+            + Add benefit
+          </Link>
+        }
+      />
       {flash && (
         <div className="alert alert--success" role="status">
           {flash}

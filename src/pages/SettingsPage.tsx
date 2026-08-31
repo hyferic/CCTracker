@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ErrorState, SkeletonRows } from '../components/AsyncState';
+import { PageHeader } from '../components/PageHeader';
 import { Icon } from '../components/Icon';
 import { CSV_IMPORT_TEMPLATE, parseCsvImport } from '../domain/csvImport';
 import { formatInstantInTimeZone, validateTimeZone } from '../domain/dates';
@@ -186,15 +187,12 @@ export function SettingsPage() {
 
   return (
     <div className="page-stack settings-grid">
-      <section className="welcome-row settings-span">
-        <div>
-          <p className="eyebrow">Preferences, portability & operations</p>
-          <h2>Keep the tracker dependable.</h2>
-          <p className="muted">
-            Manage local-date behavior, email preferences, backups, and reminder health.
-          </p>
-        </div>
-      </section>
+      <PageHeader
+        className="settings-span"
+        eyebrow="Preferences, portability & operations"
+        title="Keep the tracker dependable."
+        description="Manage local-date behavior, email preferences, backups, and reminder health."
+      />
       {message && (
         <div className="alert alert--success settings-span" role="status">
           {message}

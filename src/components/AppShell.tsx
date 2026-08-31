@@ -35,6 +35,7 @@ export function AppShell() {
         Skip to main content
       </a>
       <aside
+        id="primary-navigation"
         className={`sidebar ${menuOpen ? 'sidebar--open' : ''}`}
         aria-label="Primary navigation"
       >
@@ -53,6 +54,7 @@ export function AppShell() {
             className="icon-button sidebar-close"
             onClick={() => setMenuOpen(false)}
             aria-label="Close menu"
+            type="button"
           >
             <Icon name="close" />
           </button>
@@ -62,6 +64,7 @@ export function AppShell() {
             <NavLink
               key={item.to}
               to={item.to}
+              end={item.to === '/dashboard'}
               onClick={() => setMenuOpen(false)}
               className={({ isActive }) => `nav-link ${isActive ? 'nav-link--active' : ''}`}
             >
@@ -85,6 +88,7 @@ export function AppShell() {
             onClick={() => void auth.signOut()}
             aria-label="Sign out"
             title="Sign out"
+            type="button"
           >
             <Icon name="logout" />
           </button>
@@ -95,6 +99,7 @@ export function AppShell() {
           className="scrim"
           onClick={() => setMenuOpen(false)}
           aria-label="Close navigation"
+          type="button"
         />
       )}
       <div className="app-main">
@@ -103,6 +108,9 @@ export function AppShell() {
             className="icon-button menu-button"
             onClick={() => setMenuOpen(true)}
             aria-label="Open menu"
+            aria-controls="primary-navigation"
+            aria-expanded={menuOpen}
+            type="button"
           >
             <Icon name="menu" />
           </button>

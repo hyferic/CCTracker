@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ErrorState, SkeletonRows } from '../components/AsyncState';
+import { PageHeader } from '../components/PageHeader';
 import { benefitInputSchema } from '../domain/validation';
 import { useBusinessDate } from '../features/profile/ProfileContext';
 import { useAsync } from '../hooks/useAsync';
@@ -228,23 +229,18 @@ export function BenefitFormPage() {
 
   return (
     <form className="benefit-form page-stack" onSubmit={(event) => void submit(event)}>
-      <section className="welcome-row">
-        <div>
-          <p className="eyebrow">{definitionId ? 'Revision-aware edit' : 'New benefit'}</p>
-          <h2>
-            {definitionId
-              ? `Edit ${data.data?.definition?.name}`
-              : 'What benefit are you tracking?'}
-          </h2>
-          <p className="muted">
-            Use date-only periods. PerkLedger applies your selected IANA timezone instead of the
-            browser timezone.
-          </p>
-        </div>
-        <Link className="button button--secondary" to={definitionId ? '/benefits' : '/dashboard'}>
-          Cancel
-        </Link>
-      </section>
+      <PageHeader
+        eyebrow={definitionId ? 'Revision-aware edit' : 'New benefit'}
+        title={
+          definitionId ? `Edit ${data.data?.definition?.name}` : 'What benefit are you tracking?'
+        }
+        description="Use date-only periods. PerkLedger applies your selected IANA timezone instead of the browser timezone."
+        action={
+          <Link className="button button--secondary" to={definitionId ? '/benefits' : '/dashboard'}>
+            Cancel
+          </Link>
+        }
+      />
 
       {definitionId && (
         <section className="panel form-section">

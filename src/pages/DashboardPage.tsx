@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { BenefitTable } from '../components/BenefitTable';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
 import { Icon } from '../components/Icon';
+import { PageHeader } from '../components/PageHeader';
 import { formatDate } from '../domain/dates';
 import { attentionScore } from '../domain/status';
 import { formatQuantity } from '../domain/money';
@@ -252,16 +253,16 @@ export function DashboardPage() {
           {actionMessage ?? actionError}
         </div>
       )}
-      <section className="welcome-row">
-        <div>
-          <p className="eyebrow">At a glance</p>
-          <h2>Make every benefit count.</h2>
-          <p className="muted">Prioritized by what needs your attention today.</p>
-        </div>
-        <Link className="button button--primary desktop-only" to="/benefits/new">
-          + Add benefit
-        </Link>
-      </section>
+      <PageHeader
+        eyebrow="At a glance"
+        title="Make every benefit count."
+        description="Prioritized by what needs your attention today."
+        action={
+          <Link className="button button--primary desktop-only" to="/benefits/new">
+            + Add benefit
+          </Link>
+        }
+      />
       {result.loading ? (
         <SkeletonRows count={3} />
       ) : instances.length === 0 ? (
@@ -349,6 +350,7 @@ export function DashboardPage() {
                             className="merchant-button"
                             type="button"
                             aria-expanded={merchantInstanceId === item.instance_id}
+                            aria-controls={`merchant-details-${item.instance_id}`}
                             onClick={() =>
                               setMerchantInstanceId((current) =>
                                 current === item.instance_id ? null : item.instance_id,
@@ -359,6 +361,7 @@ export function DashboardPage() {
                           </button>
                           {merchantInstanceId === item.instance_id && (
                             <div
+                              id={`merchant-details-${item.instance_id}`}
                               className="merchant-popover"
                               role="dialog"
                               aria-label="Eligible merchant details"
@@ -389,11 +392,11 @@ export function DashboardPage() {
               </div>
             )}
           </section>
-          <section className="panel">
+          <section className="panel benefit-views-panel" aria-labelledby="benefit-views-heading">
             <div className="section-head section-head--wrap">
               <div>
                 <p className="eyebrow">Benefit views</p>
-                <h2>{filtered.length} shown</h2>
+                <h2 id="benefit-views-heading">{filtered.length} shown</h2>
               </div>
               <div className="toolbar">
                 <button
@@ -423,6 +426,9 @@ export function DashboardPage() {
                 </label>
                 <button
                   className={`button button--secondary ${filtersOpen ? 'button--active' : ''}`}
+                  type="button"
+                  aria-expanded={filtersOpen}
+                  aria-controls="benefit-filters"
                   onClick={() => setFiltersOpen((open) => !open)}
                 >
                   Filter{activeFilterCount ? ` (${activeFilterCount})` : ''}
@@ -430,7 +436,7 @@ export function DashboardPage() {
               </div>
             </div>
             {filtersOpen && (
-              <div className="filters" aria-label="Benefit filters">
+              <div id="benefit-filters" className="filters" aria-label="Benefit filters">
                 <label>
                   <span>Card/account</span>
                   <select
@@ -612,6 +618,7 @@ export function DashboardPage() {
                 </label>
                 <button
                   className="text-button filter-reset"
+                  type="button"
                   onClick={() => setFilters(initialFilters)}
                 >
                   Clear filters

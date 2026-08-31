@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
 import { Icon } from '../components/Icon';
+import { PageHeader } from '../components/PageHeader';
 import { formatDate } from '../domain/dates';
 import { formatQuantity } from '../domain/money';
 import { accountInputSchema } from '../domain/validation';
@@ -223,24 +224,21 @@ export function AccountsPage() {
   if (result.error) return <ErrorState error={result.error} onRetry={result.refresh} />;
   return (
     <div className="page-stack">
-      <section className="welcome-row">
-        <div>
-          <p className="eyebrow">Cards, services & portals</p>
-          <h2>Keep providers organized.</h2>
-          <p className="muted">
-            Choose an exact U.S. consumer card to preview standard benefits, or create a custom
-            account. Never store a full card number, CVV, password, or banking credential.
-          </p>
-        </div>
-        <div className="card-actions">
-          <Link className="button button--secondary" to="/benefits/new">
-            + Add custom benefit
-          </Link>
-          <button className="button button--primary" onClick={() => open('new')}>
-            + Add account
-          </button>
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="Cards, services & portals"
+        title="Keep providers organized."
+        description="Choose an exact U.S. consumer card to preview standard benefits, or create a custom account. Never store a full card number, CVV, password, or banking credential."
+        action={
+          <div className="card-actions">
+            <Link className="button button--secondary" to="/benefits/new">
+              + Add custom benefit
+            </Link>
+            <button className="button button--primary" onClick={() => open('new')}>
+              + Add account
+            </button>
+          </div>
+        }
+      />
       {message && (
         <div className="alert alert--success" role="status">
           {message}
