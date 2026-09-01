@@ -46,7 +46,7 @@ export default tseslint.config(
     rules: { '@typescript-eslint/no-unsafe-assignment': 'off' },
   },
   {
-    files: ['src/features/auth/AuthProvider.tsx'],
+    files: ['src/features/auth/AuthProvider.tsx', 'src/features/i18n/I18nContext.tsx'],
     rules: { 'react-refresh/only-export-components': 'off' },
   },
 );

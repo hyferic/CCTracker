@@ -186,33 +186,33 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   );
 
   await page.goto('/#/dashboard');
-  await page.getByLabel('Search benefits').fill(editedBenefitName);
-  await page.getByRole('button', { name: /^Filter/ }).click();
-  await page.getByLabel('Merchant', { exact: true }).fill(merchantName);
-  await page.getByLabel('Usage').selectOption('partial');
-  const dashboardRow = page.locator('tbody tr').filter({
+  const dashboardBenefit = page.locator('article.dashboard-benefit').filter({
     has: page.getByRole('link', { name: editedBenefitName, exact: true }),
   });
-  await expect(dashboardRow).toHaveCount(1);
-  await expect(dashboardRow).toContainText('$60');
-  await expect(dashboardRow).toContainText('Partially Used');
+  await expect(dashboardBenefit).toHaveCount(1);
+  await expect(dashboardBenefit).toContainText('$60');
+  await expect(dashboardBenefit).toContainText('Partially used');
+  await expect(dashboardBenefit).toContainText('Contract');
+  await expect(page.getByText('Other reminders', { exact: true })).toHaveCount(0);
+
+  await dashboardBenefit.getByRole('button', { name: 'Record usage' }).click();
+  const dashboardUsageDialog = page.getByRole('dialog', { name: 'Confirm usage' });
+  await dashboardUsageDialog.getByLabel('Amount used').fill('20');
+  await dashboardUsageDialog.getByLabel('Date used').fill(localDate());
+  page.once('dialog', (dialog) => dialog.accept());
+  await dashboardUsageDialog.getByRole('button', { name: 'Save usage' }).click();
+  await expect(page.getByRole('status')).toContainText('Usage recorded');
+  await expect(
+    page
+      .locator('article.dashboard-benefit')
+      .filter({ has: page.getByRole('link', { name: editedBenefitName, exact: true }) }),
+  ).toContainText('$40');
 
   await page.goto('/#/benefits');
   const activeBenefitCard = benefitCard(page, editedBenefitName);
   page.once('dialog', (dialog) => dialog.accept());
   await activeBenefitCard.getByRole('button', { name: 'Deactivate' }).click();
   await expect(activeBenefitCard.getByText('Inactive', { exact: true })).toBeVisible();
-
-  await page.goto('/#/dashboard');
-  await page.getByLabel('Search benefits').fill(editedBenefitName);
-  await expect(page.getByRole('link', { name: editedBenefitName, exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: /^Filter/ }).click();
-  await page.getByLabel('Definition status').selectOption('inactive');
-  const inactiveRows = page.locator('table.benefit-table tbody tr').filter({
-    has: page.getByRole('link', { name: editedBenefitName, exact: true }),
-  });
-  await expect.poll(() => inactiveRows.count()).toBeGreaterThanOrEqual(2);
-  await expect(inactiveRows.first()).toBeVisible();
 
   await page.goto('/#/accounts');
   const activeAccountCard = accountCard(page, editedAccountName);

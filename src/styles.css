@@ -768,6 +768,109 @@ code {
 }
 
 /* Dashboard */
+.dashboard-outstanding {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.dashboard-outstanding > .section-head {
+  padding-inline: 0;
+  border-bottom: 0;
+}
+
+.dashboard-outstanding > .section-head h2 {
+  font-size: var(--text-2xl);
+}
+
+.dashboard-group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dashboard-group h3 {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  font-weight: 750;
+}
+
+.dashboard-benefit-list {
+  display: grid;
+  overflow: visible;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+}
+
+.dashboard-benefit {
+  display: grid;
+  grid-template-columns: minmax(14rem, 2fr) minmax(7rem, 1fr) minmax(9rem, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.dashboard-benefit:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-benefit:hover {
+  background: var(--color-surface-hover);
+}
+
+.dashboard-benefit-main,
+.dashboard-benefit-value,
+.dashboard-benefit-deadline {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.dashboard-benefit-name {
+  overflow: hidden;
+  color: var(--color-ink);
+  font-size: var(--text-lg);
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.dashboard-benefit-name:hover {
+  color: var(--color-accent-strong);
+}
+
+.dashboard-benefit-card,
+.dashboard-benefit-condition,
+.dashboard-benefit-value span,
+.dashboard-benefit-deadline span {
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-benefit-condition {
+  max-width: 34rem;
+}
+
+.dashboard-benefit-value strong,
+.dashboard-benefit-deadline strong {
+  font-size: var(--text-base);
+  font-weight: 750;
+}
+
+.dashboard-benefit--soon .dashboard-benefit-deadline strong {
+  color: var(--color-danger);
+}
+
+.dashboard-benefit .button--small {
+  white-space: nowrap;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2222,6 +2325,30 @@ code {
     grid-template-columns: minmax(260px, 1.4fr) 1fr;
   }
 
+  .dashboard-benefit {
+    grid-template-columns: minmax(0, 1fr) minmax(7rem, 0.8fr) minmax(8rem, 0.9fr);
+  }
+
+  .dashboard-benefit-main {
+    grid-column: 1;
+  }
+
+  .dashboard-benefit-value {
+    grid-column: 2;
+  }
+
+  .dashboard-benefit-deadline {
+    grid-column: 3;
+  }
+
+  .dashboard-benefit .merchant-popover-wrap {
+    grid-column: 1;
+  }
+
+  .dashboard-benefit > .button--small {
+    justify-self: end;
+  }
+
   .definition-actions {
     grid-column: 1 / -1;
     flex-direction: row;
@@ -2355,6 +2482,44 @@ code {
 
   .summary-grid {
     gap: var(--space-2);
+  }
+
+  .dashboard-outstanding {
+    gap: var(--space-4);
+  }
+
+  .dashboard-benefit {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-3);
+    padding: var(--space-4);
+  }
+
+  .dashboard-benefit-main,
+  .dashboard-benefit-value,
+  .dashboard-benefit-deadline {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-benefit-value,
+  .dashboard-benefit-deadline {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .dashboard-benefit-name,
+  .dashboard-benefit-condition,
+  .dashboard-benefit-card {
+    white-space: normal;
+  }
+
+  .dashboard-benefit .merchant-popover-wrap {
+    grid-column: 1;
+  }
+
+  .dashboard-benefit > .button--small {
+    grid-column: 2;
+    justify-self: end;
   }
 
   .summary-card {

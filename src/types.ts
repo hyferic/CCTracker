@@ -10,6 +10,15 @@ export type RecurrenceBasis = 'none' | 'calendar' | 'anniversary';
 export type LifecycleStatus = 'upcoming' | 'active' | 'expired' | 'void';
 export type UsageStatus = 'unused' | 'partial' | 'used';
 export type EditScope = 'future' | 'current_and_future' | 'this_period';
+export type CatalogVerificationState = 'verified' | 'limited' | 'pending' | 'contingent';
+export type CatalogCardType =
+  | 'consumer'
+  | 'business'
+  | 'student'
+  | 'secured'
+  | 'co_branded'
+  | 'charge'
+  | 'other';
 
 export interface Profile {
   user_id: string;
@@ -19,6 +28,7 @@ export interface Profile {
   expiration_reminders_enabled: boolean;
   reactivation_reminders_enabled: boolean;
   recent_reset_days: number;
+  language: 'en' | 'zh-CN' | null;
 }
 
 export interface Account {
@@ -185,6 +195,24 @@ export interface CardCatalogTemplate {
   official_url: string;
   verified_on: string;
   age_days: number;
+  benefit_description?: string;
+  benefit_value?: number | null;
+  benefit_currency?: string | null;
+  benefit_unit?: string | null;
+  structured_recurrence_type?: RecurrenceType;
+  structured_recurrence_basis?: RecurrenceBasis;
+  reset_strategy?: string;
+  activation_required?: boolean;
+  eligibility?: Record<string, unknown>;
+  limits?: Record<string, unknown>;
+  merchant_scope?: string[];
+  official_source_urls?: string[];
+  verification_state?: CatalogVerificationState;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  verification_notes?: string;
+  metadata?: Record<string, unknown>;
+  structured_content_hash?: string;
 }
 
 export interface CardCatalogProduct {
@@ -200,6 +228,15 @@ export interface CardCatalogProduct {
   official_url: string;
   verified_on: string;
   age_days: number;
+  card_type?: CatalogCardType;
+  official_product_url?: string | null;
+  official_source_urls?: string[];
+  verification_state?: CatalogVerificationState;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  verification_notes?: string;
+  metadata?: Record<string, unknown>;
+  structured_content_hash?: string;
   templates: CardCatalogTemplate[];
 }
 

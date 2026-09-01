@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { AuthProvider } from '../features/auth/AuthProvider';
 import { ProfileProvider } from '../features/profile/ProfileProvider';
+import { I18nProvider } from '../features/i18n/I18nContext';
 import { benefitDefinition, benefitInstance, profileFixture } from '../test/fixtures';
 import type { CardCatalogProduct, Profile } from '../types';
 import { BenefitFormPage } from './BenefitFormPage';
@@ -33,6 +34,7 @@ const api = vi.hoisted(() => ({
   listRedemptions: vi.fn(),
   markBenefitEnrolled: vi.fn(),
   markUncappedComplete: vi.fn(),
+  reopenUncappedComplete: vi.fn(),
   confirmBenefitPeriodUsed: vi.fn(),
   overrideInstance: vi.fn(),
   recordRedemption: vi.fn(),
@@ -41,6 +43,7 @@ const api = vi.hoisted(() => ({
   setRecurrenceEnabled: vi.fn(),
   updateAccount: vi.fn(),
   updateProfile: vi.fn(),
+  updateProfileLanguage: vi.fn(),
 }));
 
 vi.mock('../services/api', () => api);
@@ -54,12 +57,14 @@ function renderRoute(
   return render(
     <AuthProvider>
       <ProfileProvider initialProfile={profile}>
-        <MemoryRouter initialEntries={[path]}>
-          <Routes>
-            <Route path={route} element={element} />
-            <Route path="*" element={<p>Navigation complete</p>} />
-          </Routes>
-        </MemoryRouter>
+        <I18nProvider>
+          <MemoryRouter initialEntries={[path]}>
+            <Routes>
+              <Route path={route} element={element} />
+              <Route path="*" element={<p>Navigation complete</p>} />
+            </Routes>
+          </MemoryRouter>
+        </I18nProvider>
       </ProfileProvider>
     </AuthProvider>,
   );
@@ -123,6 +128,9 @@ beforeEach(() => {
   api.updateProfile.mockImplementation((input: Partial<Profile>) =>
     Promise.resolve({ ...profileFixture(), ...input }),
   );
+  api.updateProfileLanguage.mockImplementation((language: Profile['language']) =>
+    Promise.resolve({ ...profileFixture(), language }),
+  );
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -171,7 +179,7 @@ describe('authenticated core flows', () => {
     await user.click(await screen.findByRole('button', { name: '+ Add account' }));
     await user.click(screen.getByRole('button', { name: /Chase Sapphire Reserve/i }));
     await user.click(screen.getByRole('button', { name: 'Continue to details' }));
-    fireEvent.change(screen.getByLabelText(/Annual-fee renewal date/), {
+    fireEvent.change(screen.getByLabelText(/Fee renewal date/), {
       target: { value: '2026-08-15' },
     });
     expect(screen.getByLabelText(/Benefit anniversary\/reset date/)).toHaveValue('2026-08-15');
@@ -394,7 +402,6 @@ describe('authenticated core flows', () => {
   });
 
   it('does not show reset reminders on the dashboard', async () => {
-    const user = userEvent.setup();
     api.listInstances.mockResolvedValue([
       benefitInstance({
         days_remaining: 20,
@@ -411,9 +418,7 @@ describe('authenticated core flows', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/Resets soon/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Other reminders/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Filter' }));
-    expect(screen.getByLabelText('Merchant')).toBeInTheDocument();
-    expect(screen.getByLabelText('Definition status')).toHaveValue('active');
+    expect(screen.queryByRole('button', { name: 'Filter' })).not.toBeInTheDocument();
   });
 
   it('confirms an expiring attention item without navigating away', async () => {
@@ -424,18 +429,103 @@ describe('authenticated core flows', () => {
     expect(
       await screen.findByRole('link', { name: '$15 monthly rideshare credit' }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Rideshare Co' })).not.toBeInTheDocument();
-    const button = await screen.findByRole('button', { name: 'Mark period used' });
+    const button = await screen.findByRole('button', { name: 'Record usage' });
     await user.click(button);
+    await user.click(screen.getByRole('button', { name: 'Save usage' }));
 
     await waitFor(() =>
       expect(api.confirmBenefitPeriodUsed).toHaveBeenCalledWith(
         '11111111-1111-4111-8111-111111111111',
         expect.any(String),
-        'Confirmed used from dashboard.',
+        'Recorded from dashboard.',
       ),
     );
     expect(screen.queryByText('Navigation complete')).not.toBeInTheDocument();
+  });
+
+  it('completes an uncapped benefit, exposes undo, and refreshes outstanding data', async () => {
+    const user = userEvent.setup();
+    const instance = benefitInstance({
+      value_kind: 'percentage_cashback',
+      available_quantity: null,
+      remaining_quantity: null,
+      redeemed_quantity: 0,
+      usage_status: 'unused',
+    });
+    api.listInstances
+      .mockResolvedValueOnce([instance])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([instance]);
+    let resolveCompletion: () => void = () => undefined;
+    api.markUncappedComplete.mockImplementation(
+      () => new Promise<void>((resolve) => (resolveCompletion = resolve)),
+    );
+    api.reopenUncappedComplete.mockResolvedValue(undefined);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    const completeButton = await screen.findByRole('button', { name: 'Mark complete' });
+    await user.click(completeButton);
+    await waitFor(() =>
+      expect(api.markUncappedComplete).toHaveBeenCalledWith(
+        instance.instance_id,
+        'Marked complete from dashboard.',
+      ),
+    );
+    expect(completeButton).toBeDisabled();
+    resolveCompletion();
+    expect(await screen.findByRole('button', { name: 'Undo completion' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Undo completion' }));
+    await waitFor(() =>
+      expect(api.reopenUncappedComplete).toHaveBeenCalledWith(instance.instance_id),
+    );
+  });
+
+  it('records partial usage for an uncapped benefit without imposing a maximum', async () => {
+    const user = userEvent.setup();
+    const instance = benefitInstance({
+      value_kind: 'percentage_cashback',
+      available_quantity: null,
+      remaining_quantity: null,
+      redeemed_quantity: 0,
+      usage_status: 'unused',
+    });
+    api.listInstances.mockResolvedValueOnce([instance]).mockResolvedValueOnce([instance]);
+    api.recordRedemption.mockResolvedValue(undefined);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Record usage' }));
+    const amountInput = screen.getByLabelText('Amount used');
+    expect(amountInput).not.toHaveAttribute('max');
+    fireEvent.change(amountInput, { target: { value: '2.5' } });
+    await user.click(screen.getByRole('button', { name: 'Save usage' }));
+
+    await waitFor(() =>
+      expect(api.recordRedemption).toHaveBeenCalledWith(instance.instance_id, {
+        quantity: 2.5,
+        used_on: expect.any(String),
+        merchant: instance.merchant,
+        transaction_description: null,
+        notes: 'Recorded from dashboard.',
+      }),
+    );
+    expect(api.confirmBenefitPeriodUsed).not.toHaveBeenCalled();
+  });
+
+  it('shows uncapped completion failures outside the usage dialog', async () => {
+    const user = userEvent.setup();
+    api.listInstances.mockResolvedValue([
+      benefitInstance({
+        value_kind: 'percentage_cashback',
+        available_quantity: null,
+        remaining_quantity: null,
+        usage_status: 'unused',
+      }),
+    ]);
+    api.markUncappedComplete.mockRejectedValue(new Error('server refused completion'));
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Mark complete' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('server refused completion');
   });
 
   it('opens an expiration highlight with compact card details and merchant guidance', async () => {
@@ -464,21 +554,17 @@ describe('authenticated core flows', () => {
     ]);
     renderRoute('/dashboard', '/dashboard', <DashboardPage />);
 
-    await user.click(await screen.findByRole('button', { name: /Expiring in 30 days/ }));
-    const expirationPanel = screen.getByRole('region', { name: 'Expiring in 30 days' });
-    expect(within(expirationPanel).getByText('Dining credit')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Dining credit' })).toBeInTheDocument();
     expect(screen.getByText('Amex Gold · •••• 1001')).toBeInTheDocument();
-    expect(screen.getByText(/Ends Feb 29, 2028/)).toBeInTheDocument();
+    expect(screen.getByText(/Resets Mar 1, 2028/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Resy' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Eligible merchants' }));
-    expect(screen.getByRole('dialog', { name: 'Eligible merchant details' })).toHaveTextContent(
-      'Dining',
-    );
-    expect(screen.getByRole('dialog', { name: 'Eligible merchant details' })).toHaveTextContent(
+    await user.click(screen.getByRole('button', { name: 'Dining' }));
+    expect(screen.getByRole('dialog', { name: 'Condition' })).toHaveTextContent('Dining');
+    expect(screen.getByRole('dialog', { name: 'Condition' })).toHaveTextContent(
       'Use at participating U.S. restaurants.',
     );
-    expect(screen.getByRole('link', { name: 'Open eligible website' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'https://americanexpress.com' })).toHaveAttribute(
       'href',
       'https://americanexpress.com',
     );
@@ -528,17 +614,12 @@ describe('authenticated core flows', () => {
   });
 
   it('queries live periods by default and loads audit versions only when requested', async () => {
-    const user = userEvent.setup();
     api.listInstances.mockResolvedValue([benefitInstance()]);
     renderRoute('/dashboard', '/dashboard', <DashboardPage />);
 
     await screen.findByRole('link', { name: '$15 monthly rideshare credit' });
     expect(api.listInstances).toHaveBeenCalledWith({ includeAuditVersions: false });
-    await user.click(screen.getByRole('button', { name: 'Filter' }));
-    await user.selectOptions(screen.getByLabelText('Period versions'), 'all');
-    await waitFor(() =>
-      expect(api.listInstances).toHaveBeenCalledWith({ includeAuditVersions: true }),
-    );
+    expect(screen.queryByRole('button', { name: 'Filter' })).not.toBeInTheDocument();
   });
 
   it('does not show enrollment reminders on the dashboard', async () => {
@@ -620,5 +701,38 @@ describe('authenticated core flows', () => {
         expect.objectContaining({ notification_email: 'owner@example.com' }),
       ),
     );
+  });
+
+  it('preserves unsaved timezone and reminder edits when language persistence succeeds', async () => {
+    const user = userEvent.setup();
+    const timezone = 'America/Chicago';
+    api.updateProfileLanguage.mockResolvedValue({ ...profileFixture(), language: 'zh-CN' });
+    renderRoute('/settings', '/settings', <SettingsPage />);
+
+    const timezoneInput = await screen.findByDisplayValue('America/New_York');
+    const expirationReminders = screen.getByRole('checkbox', { name: /Expiration reminders/i });
+    const language = screen.getByRole('combobox', { name: 'Language' });
+    await user.clear(timezoneInput);
+    await user.type(timezoneInput, timezone);
+    await user.click(expirationReminders);
+    await user.selectOptions(language, 'zh-CN');
+
+    await waitFor(() => expect(api.updateProfileLanguage).toHaveBeenCalledWith('zh-CN'));
+    expect(timezoneInput).toHaveValue(timezone);
+    expect(expirationReminders).not.toBeChecked();
+  });
+
+  it('rolls back a failed language save and surfaces the error', async () => {
+    const user = userEvent.setup();
+    api.updateProfileLanguage.mockRejectedValueOnce(new Error('language persistence failed'));
+    renderRoute('/settings', '/settings', <SettingsPage />);
+
+    const language = await screen.findByRole('combobox', { name: 'Language' });
+    await user.selectOptions(language, 'zh-CN');
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('language persistence failed'),
+    );
+    expect(language).toHaveValue('en');
   });
 });

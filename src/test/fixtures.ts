@@ -9,6 +9,7 @@ export function profileFixture(overrides: Partial<Profile> = {}): Profile {
     expiration_reminders_enabled: true,
     reactivation_reminders_enabled: true,
     recent_reset_days: 3,
+    language: 'en',
     ...overrides,
   };
 }

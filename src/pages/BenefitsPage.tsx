@@ -13,8 +13,11 @@ import {
   setRecurrenceEnabled,
 } from '../services/api';
 import type { BenefitInstance } from '../types';
+import { recurrenceLabel, useI18n } from '../features/i18n/I18nContext';
 
 export function BenefitsPage() {
+  const { language, localize, t } = useI18n();
+  const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US';
   const location = useLocation();
   const result = useAsync(async () => {
     const [definitions, instances] = await Promise.all([
@@ -27,52 +30,35 @@ export function BenefitsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   async function toggleActive(definitionId: string, active: boolean) {
-    if (
-      !active &&
-      !window.confirm(
-        'Deactivate this benefit? History stays available, but reminders and dashboard actions are suppressed.',
-      )
-    )
-      return;
+    if (!active && !window.confirm(t('benefits.deactivateConfirm'))) return;
     try {
       setActionError(null);
       await setBenefitActive(definitionId, active);
       result.refresh();
     } catch (caught) {
-      setActionError(caught instanceof Error ? caught.message : 'Could not update this benefit.');
+      setActionError(caught instanceof Error ? caught.message : t('benefits.updateError'));
     }
   }
 
   async function toggleRecurrence(definitionId: string, enabled: boolean) {
-    if (
-      !enabled &&
-      !window.confirm(
-        'Disable recurrence? Current and historical periods stay, while unused future periods are voided.',
-      )
-    )
-      return;
+    if (!enabled && !window.confirm(t('benefits.recurrenceConfirm'))) return;
     try {
       setActionError(null);
       await setRecurrenceEnabled(definitionId, enabled);
       result.refresh();
     } catch (caught) {
-      setActionError(caught instanceof Error ? caught.message : 'Could not update recurrence.');
+      setActionError(caught instanceof Error ? caught.message : t('benefits.recurrenceError'));
     }
   }
 
   async function removeDraft(definitionId: string) {
-    if (
-      !window.confirm(
-        'Permanently delete this unreferenced future draft? Anything with current/history activity must be deactivated instead.',
-      )
-    )
-      return;
+    if (!window.confirm(t('benefits.deleteConfirm'))) return;
     try {
       setActionError(null);
       await deleteBenefitDraft(definitionId);
       result.refresh();
     } catch (caught) {
-      setActionError(caught instanceof Error ? caught.message : 'Could not delete this draft.');
+      setActionError(caught instanceof Error ? caught.message : t('benefits.deleteError'));
     }
   }
 
@@ -83,12 +69,12 @@ export function BenefitsPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Definitions & history"
-        title="Manage benefit rules."
-        description="Definitions describe the rules. Every recurring period stays separate so edits never erase usage history."
+        eyebrow={t('benefits.eyebrow')}
+        title={t('benefits.title')}
+        description={t('benefits.description')}
         action={
           <Link className="button button--primary" to="/benefits/new">
-            + Add benefit
+            {t('common.addBenefit')}
           </Link>
         }
       />
@@ -104,17 +90,17 @@ export function BenefitsPage() {
       )}
       {!definitions.length ? (
         <EmptyState
-          title="No benefit definitions yet"
+          title={t('benefits.emptyTitle')}
           action={
             <Link className="button button--primary" to="/benefits/new">
-              Add your first benefit
+              {t('benefits.addFirst')}
             </Link>
           }
         >
-          Add a fixed credit, cashback offer, points benefit, membership, or custom value.
+          {t('benefits.emptyBody')}
         </EmptyState>
       ) : (
-        <section className="definition-list" aria-label="Benefit definitions">
+        <section className="definition-list" aria-label={t('benefits.definitions')}>
           {definitions.map((definition) => {
             const periods = (result.data?.instances ?? []).filter(
               (instance) => instance.definition_id === definition.id,
@@ -140,21 +126,28 @@ export function BenefitsPage() {
                       <span
                         className={`status ${definition.active ? 'status--success' : 'status--neutral'}`}
                       >
-                        {definition.active ? 'Active' : 'Inactive'}
+                        {definition.active ? t('benefits.active') : t('benefits.inactive')}
                       </span>
                     </div>
                     <p className="muted">
                       {definition.category} ·{' '}
                       {definition.recurrence_enabled
-                        ? `${definition.recurrence_type} · ${definition.recurrence_basis}`
-                        : 'One-time'}{' '}
-                      · revision {definition.current_revision_no}
+                        ? recurrenceLabel(
+                            definition.recurrence_type,
+                            definition.recurrence_basis,
+                            localize,
+                          )
+                        : localize('One-time', '一次性')}{' '}
+                      · {localize('revision', '版本')} {definition.current_revision_no}
                     </p>
                     {definition.origin_template_version_id && (
                       <p className="muted">
-                        Standard catalog template v{definition.origin_template_version}
-                        {definition.customized_at ? ' · customized' : ' · unchanged'} · terms zone{' '}
-                        {definition.terms_timezone}
+                        {localize('Standard catalog template', '标准目录模板')} v
+                        {definition.origin_template_version}
+                        {definition.customized_at
+                          ? localize(' · customized', ' · 已自定义')
+                          : localize(' · unchanged', ' · 未修改')}{' '}
+                        · {localize('terms zone', '条款时区')} {definition.terms_timezone}
                       </p>
                     )}
                     {definition.description && <p>{definition.description}</p>}
@@ -162,31 +155,32 @@ export function BenefitsPage() {
                 </div>
                 <dl className="definition-stats">
                   <div>
-                    <dt>Current value</dt>
+                    <dt>{t('benefits.currentValue')}</dt>
                     <dd>
                       {current
                         ? formatQuantity(current.available_quantity, {
                             valueKind: current.value_kind,
                             currency: current.currency,
                             unitLabel: current.unit_label,
+                            locale,
                           })
-                        : 'No period'}
+                        : localize('No period', '暂无周期')}
                     </dd>
                   </div>
                   <div>
-                    <dt>Current period</dt>
+                    <dt>{t('benefits.currentPeriod')}</dt>
                     <dd>
                       {current
-                        ? `${formatDate(current.period_start)} – ${formatDate(current.period_end)}`
+                        ? `${formatDate(current.period_start, locale)} – ${formatDate(current.period_end, locale)}`
                         : '—'}
                     </dd>
                   </div>
                   <div>
-                    <dt>History</dt>
+                    <dt>{t('benefits.history')}</dt>
                     <dd>
-                      {livePeriods.length} live period{livePeriods.length === 1 ? '' : 's'}
+                      {livePeriods.length} {localize('live period', '个有效周期')}
                       {auditVersions.length
-                        ? ` · ${auditVersions.length} audit version${auditVersions.length === 1 ? '' : 's'}`
+                        ? ` · ${auditVersions.length} ${localize('audit version', '个审计版本')}`
                         : ''}
                     </dd>
                   </div>
@@ -194,21 +188,21 @@ export function BenefitsPage() {
                 <div className="definition-actions">
                   {current && (
                     <Link className="text-link" to={`/instances/${current.instance_id}`}>
-                      View current period
+                      {t('benefits.viewPeriod')}
                     </Link>
                   )}
                   <Link
                     className="button button--secondary button--small"
                     to={`/benefits/${definition.id}/edit`}
                   >
-                    Edit rules
+                    {t('benefits.editRules')}
                   </Link>
                   {definition.recurrence_enabled && (
                     <button
                       className="text-button"
                       onClick={() => void toggleRecurrence(definition.id, false)}
                     >
-                      Disable recurrence
+                      {t('benefits.disableRecurrence')}
                     </button>
                   )}
                   {!definition.recurrence_enabled && definition.recurrence_type !== 'one_time' && (
@@ -216,25 +210,25 @@ export function BenefitsPage() {
                       className="text-button"
                       onClick={() => void toggleRecurrence(definition.id, true)}
                     >
-                      Re-enable recurrence
+                      {t('benefits.enableRecurrence')}
                     </button>
                   )}
                   <button
                     className={`text-button ${definition.active ? 'text-button--danger' : ''}`}
                     onClick={() => void toggleActive(definition.id, !definition.active)}
                   >
-                    {definition.active ? 'Deactivate' : 'Reactivate'}
+                    {definition.active ? t('benefits.deactivate') : t('benefits.reactivate')}
                   </button>
                   <button
                     className="text-button text-button--danger"
                     onClick={() => void removeDraft(definition.id)}
                   >
-                    Delete draft
+                    {t('benefits.deleteDraft')}
                   </button>
                 </div>
                 {periods.length > 0 && (
                   <details className="period-history">
-                    <summary>Period history</summary>
+                    <summary>{t('benefits.periodHistory')}</summary>
                     <div className="period-history-list">
                       {periods
                         .sort(
@@ -244,10 +238,17 @@ export function BenefitsPage() {
                         )
                         .map((instance: BenefitInstance) => {
                           const versionLabel = instance.is_audit_version
-                            ? `Void audit · version ${instance.instance_version}`
+                            ? `${localize('Void audit · version', '已作废审计 · 版本')} ${instance.instance_version}`
                             : instance.supersedes_instance_id
-                              ? `Live · version ${instance.instance_version} · supersedes prior`
-                              : instance.usage_status;
+                              ? `${localize('Live · version', '有效 · 版本')} ${instance.instance_version} · ${localize('supersedes prior', '替代之前版本')}`
+                              : localize(
+                                  instance.usage_status,
+                                  instance.usage_status === 'used'
+                                    ? '已使用'
+                                    : instance.usage_status === 'partial'
+                                      ? '部分使用'
+                                      : '未使用',
+                                );
                           const versionTone = instance.is_audit_version
                             ? 'danger'
                             : instance.supersedes_instance_id
@@ -262,7 +263,7 @@ export function BenefitsPage() {
                               <span>
                                 {instance.period_label}
                                 {instance.superseded_by_instance_id
-                                  ? ' · superseded by replacement'
+                                  ? localize(' · superseded by replacement', ' · 已由替代版本接替')
                                   : ''}
                               </span>
                               <span>
@@ -270,8 +271,9 @@ export function BenefitsPage() {
                                   valueKind: instance.value_kind,
                                   currency: instance.currency,
                                   unitLabel: instance.unit_label,
+                                  locale,
                                 })}{' '}
-                                remaining
+                                {localize('remaining', '剩余')}
                               </span>
                               <span className={`mini-status mini-status--${versionTone}`}>
                                 {versionLabel}

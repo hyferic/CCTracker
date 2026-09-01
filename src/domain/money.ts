@@ -6,18 +6,24 @@ export function hasAtMostTwoDecimals(value: number): boolean {
 
 export function formatQuantity(
   value: number | null,
-  options: { valueKind: ValueKind; currency?: string | null; unitLabel?: string | null },
+  options: {
+    valueKind: ValueKind;
+    currency?: string | null;
+    unitLabel?: string | null;
+    locale?: string;
+  },
 ) {
-  if (value === null) return 'Uncapped';
+  if (value === null)
+    return options.locale?.toLowerCase().startsWith('zh') ? '不限额度' : 'Uncapped';
   if (options.valueKind === 'money' || options.valueKind === 'percentage_cashback') {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat(options.locale ?? 'en-US', {
       style: 'currency',
       currency: options.currency ?? 'USD',
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
     }).format(value);
   }
-  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)} ${options.unitLabel ?? (options.valueKind === 'points' ? 'points' : 'units')}`;
+  return `${new Intl.NumberFormat(options.locale ?? 'en-US', { maximumFractionDigits: 2 }).format(value)} ${options.unitLabel ?? (options.valueKind === 'points' ? 'points' : 'units')}`;
 }
 
 export function availableByCurrency(instances: BenefitInstance[]) {

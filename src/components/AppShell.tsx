@@ -1,43 +1,46 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../features/auth/AuthProvider';
+import { useI18n, type MessageKey } from '../features/i18n/I18nContext';
 import { Icon, type IconName } from './Icon';
 
-const titles: Record<string, string> = {
-  '/dashboard': 'Dashboard',
-  '/benefits': 'Benefits',
-  '/benefits/new': 'Add benefit',
-  '/accounts': 'Cards & accounts',
-  '/settings': 'Settings & data',
+const titles: Record<string, MessageKey> = {
+  '/dashboard': 'nav.dashboard',
+  '/benefits': 'nav.benefits',
+  '/benefits/new': 'common.addBenefit',
+  '/accounts': 'nav.accounts',
+  '/settings': 'nav.settings',
 };
 
 export function AppShell() {
   const auth = useAuth();
+  const { t } = useI18n();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const title =
-    titles[location.pathname] ??
-    (location.pathname.startsWith('/instances/')
-      ? 'Benefit period'
+  const titleKey = titles[location.pathname];
+  const title = titleKey
+    ? t(titleKey)
+    : location.pathname.startsWith('/instances/')
+      ? t('common.benefitPeriod')
       : location.pathname.includes('/edit')
-        ? 'Edit benefit'
-        : 'PerkLedger');
+        ? t('common.editBenefit')
+        : t('common.benefitTracker');
   const navItems = [
-    { to: '/dashboard', label: 'Dashboard', icon: 'grid' },
-    { to: '/benefits', label: 'Benefits', icon: 'archive' },
-    { to: '/accounts', label: 'Cards & accounts', icon: 'wallet' },
-    { to: '/settings', label: 'Settings & data', icon: 'settings' },
+    { to: '/dashboard', label: t('nav.dashboard'), icon: 'grid' },
+    { to: '/benefits', label: t('nav.benefits'), icon: 'archive' },
+    { to: '/accounts', label: t('nav.accounts'), icon: 'wallet' },
+    { to: '/settings', label: t('nav.settings'), icon: 'settings' },
   ] satisfies Array<{ to: string; label: string; icon: IconName }>;
 
   return (
     <div className="app" data-testid="app-shell">
       <a className="skip-link" href="#main-content">
-        Skip to main content
+        {t('common.skipToContent')}
       </a>
       <aside
         id="primary-navigation"
         className={`sidebar ${menuOpen ? 'sidebar--open' : ''}`}
-        aria-label="Primary navigation"
+        aria-label={t('common.primaryNavigation')}
       >
         <div className="sidebar-head">
           <NavLink
@@ -53,7 +56,7 @@ export function AppShell() {
           <button
             className="icon-button sidebar-close"
             onClick={() => setMenuOpen(false)}
-            aria-label="Close menu"
+            aria-label={t('common.closeMenu')}
             type="button"
           >
             <Icon name="close" />
@@ -80,14 +83,14 @@ export function AppShell() {
             {auth.user?.email?.slice(0, 1).toUpperCase()}
           </span>
           <span className="sidebar-user">
-            <strong>Owner</strong>
+            <strong>{t('common.owner')}</strong>
             <small title={auth.user?.email}>{auth.user?.email}</small>
           </span>
           <button
             className="icon-button"
             onClick={() => void auth.signOut()}
-            aria-label="Sign out"
-            title="Sign out"
+            aria-label={t('common.signOut')}
+            title={t('common.signOut')}
             type="button"
           >
             <Icon name="logout" />
@@ -98,7 +101,7 @@ export function AppShell() {
         <button
           className="scrim"
           onClick={() => setMenuOpen(false)}
-          aria-label="Close navigation"
+          aria-label={t('common.closeMenu')}
           type="button"
         />
       )}
@@ -107,7 +110,7 @@ export function AppShell() {
           <button
             className="icon-button menu-button"
             onClick={() => setMenuOpen(true)}
-            aria-label="Open menu"
+            aria-label={t('common.openMenu')}
             aria-controls="primary-navigation"
             aria-expanded={menuOpen}
             type="button"
@@ -115,12 +118,12 @@ export function AppShell() {
             <Icon name="menu" />
           </button>
           <div>
-            <p className="topbar-kicker">Benefit tracker</p>
+            <p className="topbar-kicker">{t('common.benefitTracker')}</p>
             <h1>{title}</h1>
           </div>
           <NavLink className="button button--primary topbar-action" to="/benefits/new">
             <Icon name="plus" />
-            <span>Add benefit</span>
+            <span>{t('common.addBenefit')}</span>
           </NavLink>
         </header>
         <main id="main-content" className="content" tabIndex={-1}>

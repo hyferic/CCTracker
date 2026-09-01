@@ -1,6 +1,7 @@
 import type { PostgrestError } from '@supabase/supabase-js';
 import type {
   Account,
+  CatalogVerificationState,
   CardCatalogProduct,
   CardCatalogTemplate,
   BenefitDefinition,
@@ -40,9 +41,18 @@ export async function updateProfile(input: {
   expiration_reminders_enabled: boolean;
   reactivation_reminders_enabled: boolean;
   recent_reset_days: number;
+  language: Profile['language'];
 }) {
   const { data, error } = await requireSupabase().rpc('update_profile_settings', {
     p_settings: input,
+  });
+  fail(error);
+  return data as Profile;
+}
+
+export async function updateProfileLanguage(language: Exclude<Profile['language'], null>) {
+  const { data, error } = await requireSupabase().rpc('update_profile_settings', {
+    p_settings: { language },
   });
   fail(error);
   return data as Profile;
@@ -123,6 +133,16 @@ export async function listCardCatalog(): Promise<CardCatalogProduct[]> {
         official_url: row.product_official_url as string,
         verified_on: row.product_verified_on as string,
         age_days: Number(row.age_days),
+        card_type: row.card_type as CardCatalogProduct['card_type'],
+        official_product_url: row.official_product_url as string | null,
+        official_source_urls: Array.isArray(row.product_source_urls)
+          ? (row.product_source_urls as string[])
+          : [],
+        verification_state: row.product_verification_state as CatalogVerificationState,
+        effective_from: row.product_effective_from as string | null,
+        effective_to: row.product_effective_to as string | null,
+        verification_notes: row.product_verification_notes as string | undefined,
+        structured_content_hash: row.product_structured_content_hash as string | undefined,
         templates: [],
       };
       products.set(productId, product);
@@ -144,6 +164,27 @@ export async function listCardCatalog(): Promise<CardCatalogProduct[]> {
       official_url: row.template_official_url as string,
       verified_on: row.template_verified_on as string,
       age_days: Number(row.age_days),
+      benefit_description: row.benefit_description as string | undefined,
+      benefit_value: row.benefit_value === null ? null : Number(row.benefit_value),
+      benefit_currency: row.benefit_currency as string | null | undefined,
+      benefit_unit: row.benefit_unit as string | null | undefined,
+      structured_recurrence_type:
+        row.structured_recurrence_type as CardCatalogTemplate['structured_recurrence_type'],
+      structured_recurrence_basis:
+        row.structured_recurrence_basis as CardCatalogTemplate['structured_recurrence_basis'],
+      reset_strategy: row.reset_strategy as string | undefined,
+      activation_required: Boolean(row.activation_required),
+      eligibility: (row.eligibility ?? {}) as Record<string, unknown>,
+      limits: (row.limits ?? {}) as Record<string, unknown>,
+      merchant_scope: Array.isArray(row.merchant_scope) ? (row.merchant_scope as string[]) : [],
+      official_source_urls: Array.isArray(row.benefit_source_urls)
+        ? (row.benefit_source_urls as string[])
+        : [],
+      verification_state: row.benefit_verification_state as CatalogVerificationState,
+      effective_from: row.benefit_effective_from as string | null,
+      effective_to: row.benefit_effective_to as string | null,
+      verification_notes: row.benefit_verification_notes as string | undefined,
+      structured_content_hash: row.benefit_structured_content_hash as string | undefined,
     });
     product.age_days = Math.max(product.age_days, Number(row.age_days));
   }
@@ -417,6 +458,13 @@ export async function markUncappedComplete(instanceId: string, note: string | nu
   const { error } = await requireSupabase().rpc('mark_uncapped_complete', {
     p_instance_id: instanceId,
     p_note: note,
+  });
+  fail(error);
+}
+
+export async function reopenUncappedComplete(instanceId: string) {
+  const { error } = await requireSupabase().rpc('reopen_uncapped_benefit', {
+    p_instance_id: instanceId,
   });
   fail(error);
 }

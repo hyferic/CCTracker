@@ -1,117 +1,59 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { BenefitTable } from '../components/BenefitTable';
-import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
+import { ErrorState, EmptyState, SkeletonRows } from '../components/AsyncState';
 import { Icon } from '../components/Icon';
 import { PageHeader } from '../components/PageHeader';
 import { formatDate } from '../domain/dates';
-import { attentionScore } from '../domain/status';
 import { formatQuantity } from '../domain/money';
+import { groupOutstanding, isOutstanding, type UrgencyGroup } from '../domain/dashboard';
 import { useBusinessDate } from '../features/profile/ProfileContext';
+import { useI18n, type MessageKey } from '../features/i18n/I18nContext';
 import { useAsync } from '../hooks/useAsync';
 import {
+  confirmBenefitPeriodUsed,
   listAccounts,
   listInstances,
-  confirmBenefitPeriodUsed,
+  markUncappedComplete,
+  recordRedemption,
+  reopenUncappedComplete,
   schedulerHealth,
 } from '../services/api';
-import type { BenefitInstance, DashboardFilters } from '../types';
+import type { Account, BenefitInstance } from '../types';
 
-const initialFilters: DashboardFilters = {
-  query: '',
-  account: '',
-  provider: '',
-  category: '',
-  lifecycle: '',
-  usage: '',
-  recurrence: '',
-  expiration: '',
-  enrollment: '',
-  merchant: '',
-  active: 'active',
-  audit: 'live',
-  sort: 'attention',
-};
-
-function filterInstances(instances: BenefitInstance[], filters: DashboardFilters) {
-  const query = filters.query.trim().toLowerCase();
-  const rows = instances.filter((instance) => {
-    const searchable =
-      instance.search_text ||
-      [
-        instance.benefit_name,
-        instance.account_display_name,
-        instance.issuer,
-        instance.category,
-        instance.merchant,
-        instance.notes,
-      ]
-        .filter(Boolean)
-        .join(' ');
-    return (
-      (!query || searchable.toLowerCase().includes(query)) &&
-      (!filters.account || instance.account_id === filters.account) &&
-      (!filters.provider || instance.issuer === filters.provider) &&
-      (!filters.category || instance.category === filters.category) &&
-      (!filters.lifecycle || instance.lifecycle_status === filters.lifecycle) &&
-      (!filters.usage || instance.usage_status === filters.usage) &&
-      (!filters.recurrence ||
-        (filters.recurrence === 'recurring'
-          ? instance.recurrence_enabled
-          : !instance.recurrence_enabled)) &&
-      (!filters.expiration ||
-        (filters.expiration === '7'
-          ? instance.days_remaining >= 0 && instance.days_remaining <= 7
-          : filters.expiration === '30'
-            ? instance.days_remaining >= 0 && instance.days_remaining <= 30
-            : instance.days_remaining > 30)) &&
-      (!filters.enrollment ||
-        (filters.enrollment === 'required'
-          ? instance.enrollment_required && !instance.enrolled_at
-          : Boolean(instance.enrolled_at))) &&
-      (!filters.merchant ||
-        instance.merchant?.toLowerCase().includes(filters.merchant.toLowerCase())) &&
-      (!filters.active ||
-        (filters.active === 'active' ? instance.definition_active : !instance.definition_active)) &&
-      (filters.audit === 'all' ||
-        (filters.audit === 'void' ? instance.is_audit_version : instance.is_live))
-    );
-  });
-  return rows.sort((a, b) => {
-    if (filters.sort === 'name') return a.benefit_name.localeCompare(b.benefit_name);
-    if (filters.sort === 'remaining')
-      return (b.remaining_quantity ?? -1) - (a.remaining_quantity ?? -1);
-    if (filters.sort === 'expiration') return a.period_end.localeCompare(b.period_end);
-    return attentionScore(b) - attentionScore(a) || a.period_end.localeCompare(b.period_end);
-  });
-}
-
-type ExpirationBucket = '7' | '30' | 'month';
-
-const expirationBucketLabels: Record<ExpirationBucket, string> = {
-  '7': 'Expiring in 7 days',
-  '30': 'Expiring in 30 days',
-  month: 'Expiring this month',
+const groupLabels: Record<
+  UrgencyGroup,
+  | 'dashboard.dueSoon'
+  | 'dashboard.thisMonth'
+  | 'dashboard.thisQuarter'
+  | 'dashboard.thisYear'
+  | 'dashboard.noDeadline'
+> = {
+  soon: 'dashboard.dueSoon',
+  month: 'dashboard.thisMonth',
+  quarter: 'dashboard.thisQuarter',
+  year: 'dashboard.thisYear',
+  none: 'dashboard.noDeadline',
 };
 
 function simplifyCardName(issuer: string | null | undefined, product: string | null | undefined) {
   const rawIssuer = issuer?.trim() ?? '';
   let rawProduct = product?.trim() ?? '';
-  if (rawIssuer && rawProduct.toLowerCase().startsWith(rawIssuer.toLowerCase())) {
+  if (rawIssuer && rawProduct.toLowerCase().startsWith(rawIssuer.toLowerCase()))
     rawProduct = rawProduct.slice(rawIssuer.length).trim();
-  }
   rawProduct = rawProduct
     .replace(/\bcard\b/gi, '')
     .replace(/\s*[—-]\s*(personal|business)\s*$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
-  const compactIssuer = rawIssuer.replace(/\bAmerican Express\b/gi, 'Amex').trim();
-  return [compactIssuer, rawProduct].filter(Boolean).join(' ');
+  return [rawIssuer.replace(/\bAmerican Express\b/gi, 'Amex').trim(), rawProduct]
+    .filter(Boolean)
+    .join(' ');
 }
 
 function cardLabel(
-  account: { nickname: string | null; issuer: string; card_service_name: string } | undefined,
+  account: Account | undefined,
   instance: BenefitInstance,
+  localize: (english: string, simplifiedChinese: string) => string,
 ) {
   const nickname = account?.nickname?.trim();
   if (nickname) return nickname;
@@ -122,7 +64,7 @@ function cardLabel(
     ) ||
     instance.account_display_name ||
     instance.issuer ||
-    'Unassigned'
+    localize('Unassigned', '未分配')
   );
 }
 
@@ -133,518 +75,452 @@ function hasMerchantGuidance(instance: BenefitInstance) {
   );
 }
 
+function conditionSummary(
+  instance: BenefitInstance,
+  t: (key: MessageKey) => string,
+  locale: string,
+) {
+  return (
+    [
+      instance.merchant ? instance.merchant : instance.merchant_category,
+      instance.eligibility_notes,
+      instance.cashback_percentage !== null
+        ? `${instance.cashback_percentage}% ${t('dashboard.cashback')}`
+        : null,
+      instance.minimum_spend !== null
+        ? `${t('dashboard.minimumSpend')} ${formatQuantity(instance.minimum_spend, { valueKind: 'money', currency: instance.currency, locale })}`
+        : null,
+      instance.enrollment_required ? t('dashboard.enrollmentRequired') : null,
+    ]
+      .filter(Boolean)
+      .join(' · ') || t('dashboard.conditionUnknown')
+  );
+}
+
+function relativeDeadline(
+  instance: BenefitInstance,
+  t: (key: MessageKey) => string,
+  locale: string,
+) {
+  if (instance.recurrence_type !== 'one_time' && instance.display_reset_date)
+    return `${t('dashboard.resets')} ${formatDate(instance.display_reset_date, locale)}`;
+  return `${t('dashboard.ends')} ${formatDate(instance.period_end, locale)}`;
+}
+
 export function DashboardPage() {
-  const [filters, setFilters] = useState(initialFilters);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [view, setView] = useState<'all' | 'month'>('all');
-  const [expirationBucket, setExpirationBucket] = useState<ExpirationBucket>('7');
-  const [merchantInstanceId, setMerchantInstanceId] = useState<string | null>(null);
-  const [confirmingInstanceId, setConfirmingInstanceId] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   const { today } = useBusinessDate();
-  const includeAuditVersions = filters.audit !== 'live';
+  const { language, t, localize } = useI18n();
+  const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US';
+  const [selected, setSelected] = useState<BenefitInstance | null>(null);
+  const [merchantInstanceId, setMerchantInstanceId] = useState<string | null>(null);
+  const [amount, setAmount] = useState<number | null>(null);
+  const [usedOn, setUsedOn] = useState(today);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [completedInstance, setCompletedInstance] = useState<BenefitInstance | null>(null);
+  const modalRef = useRef<HTMLElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const result = useAsync(async () => {
     const [instances, accounts, health] = await Promise.all([
-      listInstances({ includeAuditVersions }),
+      listInstances({ includeAuditVersions: false }),
       listAccounts(),
       schedulerHealth(),
     ]);
     return { instances, accounts, health };
-  }, [includeAuditVersions]);
-
-  const instances = useMemo(() => result.data?.instances ?? [], [result.data?.instances]);
-  const monthBounds = useMemo(() => {
-    const parts = today.split('-').map(Number);
-    const year = Number(parts[0]);
-    const month = Number(parts[1]);
-    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    return {
-      start: `${today.slice(0, 8)}01`,
-      end: `${today.slice(0, 8)}${String(lastDay).padStart(2, '0')}`,
-    };
-  }, [today]);
-  const filtered = useMemo(() => {
-    const base = filterInstances(instances, filters);
-    if (view === 'all') return base;
-    return base.filter(
-      (item) =>
-        item.is_live &&
-        item.lifecycle_status === 'active' &&
-        item.period_end >= monthBounds.start &&
-        item.period_end <= monthBounds.end,
-    );
-  }, [instances, filters, monthBounds, view]);
-  const active = instances.filter(
-    (item) => item.is_live && item.lifecycle_status === 'active' && item.definition_active,
-  );
+  });
   const accountById = useMemo(
     () => new Map((result.data?.accounts ?? []).map((account) => [account.id, account])),
     [result.data?.accounts],
   );
-  const expirationDetails = useMemo(() => {
-    return active
-      .filter((item) => item.usage_status !== 'used')
-      .filter((item) => {
-        if (expirationBucket === '7') return item.days_remaining >= 0 && item.days_remaining <= 7;
-        if (expirationBucket === '30') return item.days_remaining >= 0 && item.days_remaining <= 30;
-        return item.period_end >= monthBounds.start && item.period_end <= monthBounds.end;
-      })
-      .sort(
-        (a, b) =>
-          a.period_end.localeCompare(b.period_end) || a.benefit_name.localeCompare(b.benefit_name),
-      );
-  }, [active, expirationBucket, monthBounds]);
-  const categories = [...new Set(instances.map((item) => item.category))].sort();
-  const providers = [
-    ...new Set(instances.map((item) => item.issuer).filter(Boolean)),
-  ].sort() as string[];
-  const activeFilterCount = Object.entries(filters).filter(
-    ([key, value]) =>
-      !['query', 'sort'].includes(key) &&
-      value &&
-      !(key === 'active' && value === 'active') &&
-      !(key === 'audit' && value === 'live'),
-  ).length;
+  const outstanding = useMemo(
+    () => (result.data?.instances ?? []).filter(isOutstanding),
+    [result.data?.instances],
+  );
+  const sections = useMemo(() => groupOutstanding(outstanding, today), [outstanding, today]);
 
-  async function confirmUsed(instance: BenefitInstance) {
-    const amount = formatQuantity(instance.remaining_quantity, {
-      valueKind: instance.value_kind,
-      currency: instance.currency,
-      unitLabel: instance.unit_label,
-    });
+  useEffect(() => {
+    if (!selected) return;
+    const modal = modalRef.current;
+    if (!modal) return;
+    const focusable = () =>
+      Array.from(modal.querySelectorAll<HTMLElement>('button, input, [href]')).filter(
+        (element) => !element.hasAttribute('disabled'),
+      );
+    focusable()[0]?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setSelected(null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const elements = focusable();
+      if (!elements.length) return;
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [selected]);
+
+  useEffect(() => {
+    if (selected) return;
+    previousFocusRef.current?.focus();
+    previousFocusRef.current = null;
+  }, [selected]);
+
+  function openUsage(instance: BenefitInstance) {
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSelected(instance);
+    setAmount(instance.remaining_quantity);
+    setUsedOn(today);
+    setError(null);
+  }
+
+  async function markComplete(instance: BenefitInstance) {
+    if (busy) return;
+    if (!window.confirm(t('dashboard.completeConfirm'))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await markUncappedComplete(instance.instance_id, 'Marked complete from dashboard.');
+      setMessage(t('dashboard.recorded'));
+      setCompletedInstance(instance);
+      result.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('dashboard.completeError'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reopenCompleted() {
+    if (!completedInstance) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await reopenUncappedComplete(completedInstance.instance_id);
+      setCompletedInstance(null);
+      setMessage(t('dashboard.reopened'));
+      result.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('dashboard.completeError'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveUsage(event: FormEvent) {
+    event.preventDefault();
+    if (!selected || amount === null || amount <= 0) {
+      setError(t('dashboard.invalidAmount'));
+      return;
+    }
     if (
       !window.confirm(
-        `Confirm that you used the remaining ${amount} of “${instance.benefit_name}”?`,
+        `${t('dashboard.confirmUsage')}: ${formatQuantity(amount, { valueKind: selected.value_kind, currency: selected.currency, unitLabel: selected.unit_label, locale })}`,
       )
     )
       return;
-    setConfirmingInstanceId(instance.instance_id);
-    setActionMessage(null);
-    setActionError(null);
+    setBusy(true);
+    setError(null);
     try {
-      await confirmBenefitPeriodUsed(instance.instance_id, today, 'Confirmed used from dashboard.');
-      setActionMessage(
-        instance.recurrence_type === 'one_time'
-          ? 'Usage confirmed and the one-time benefit was archived.'
-          : 'Usage confirmed. The next benefit period is ready when available.',
-      );
+      if (selected.remaining_quantity !== null && amount >= selected.remaining_quantity) {
+        await confirmBenefitPeriodUsed(selected.instance_id, usedOn, 'Recorded from dashboard.');
+      } else {
+        await recordRedemption(selected.instance_id, {
+          quantity: amount,
+          used_on: usedOn,
+          merchant: selected.merchant,
+          transaction_description: null,
+          notes: 'Recorded from dashboard.',
+        });
+      }
+      setSelected(null);
+      setMessage(t('dashboard.recorded'));
       result.refresh();
     } catch (caught) {
-      setActionError(caught instanceof Error ? caught.message : 'Could not confirm usage.');
+      setError(caught instanceof Error ? caught.message : t('dashboard.saveError'));
     } finally {
-      setConfirmingInstanceId(null);
+      setBusy(false);
     }
   }
 
   if (result.error) return <ErrorState error={result.error} onRetry={result.refresh} />;
 
   return (
-    <div className="page-stack">
+    <div className="page-stack dashboard-page">
       {result.data?.health.is_stale && (
         <div className="health-warning" role="alert">
-          <strong>Reminder processing needs attention.</strong>
-          <span>No successful scheduler run has been recorded in more than 36 hours.</span>
-          <Link to="/settings">View recovery steps</Link>
+          <strong>{t('dashboard.staleTitle')}</strong>
+          <span>{t('dashboard.staleBody')}</span>
+          <Link to="/settings">{t('dashboard.recovery')}</Link>
         </div>
       )}
-      {(actionMessage || actionError) && (
-        <div className={`alert ${actionError ? 'alert--danger' : 'alert--success'}`} role="status">
-          {actionMessage ?? actionError}
+      {message && (
+        <div className="alert alert--success" role="status">
+          <strong>{message}</strong>
+          <span>{t('dashboard.recordedBody')}</span>
+        </div>
+      )}
+      {completedInstance && (
+        <div className="alert alert--success" role="status">
+          <span>{t('dashboard.completeBody')}</span>
+          <button
+            className="text-link"
+            type="button"
+            disabled={busy}
+            onClick={() => void reopenCompleted()}
+          >
+            {t('dashboard.undo')}
+          </button>
+        </div>
+      )}
+      {error && !selected && (
+        <div className="alert alert--danger" role="alert">
+          {error}
         </div>
       )}
       <PageHeader
-        eyebrow="At a glance"
-        title="Make every benefit count."
-        description="Prioritized by what needs your attention today."
+        eyebrow={t('dashboard.eyebrow')}
+        title={t('dashboard.title')}
+        description={t('dashboard.description')}
         action={
-          <Link className="button button--primary desktop-only" to="/benefits/new">
-            + Add benefit
+          <Link className="button button--primary" to="/benefits/new">
+            <Icon name="plus" />
+            {t('common.addBenefit')}
           </Link>
         }
       />
       {result.loading ? (
-        <SkeletonRows count={3} />
-      ) : instances.length === 0 ? (
+        <SkeletonRows count={4} />
+      ) : outstanding.length === 0 ? (
         <EmptyState
-          title="Add your first benefit"
+          title={t('dashboard.emptyTitle')}
           action={
             <Link className="button button--primary" to="/benefits/new">
-              Add benefit
+              {t('dashboard.emptyAction')}
             </Link>
           }
         >
-          Start with a monthly credit, an annual travel benefit, or a cashback offer.
+          {t('dashboard.emptyBody')}
         </EmptyState>
       ) : (
-        <>
-          <section className="summary-grid" aria-label="Benefit expiration highlights">
-            {(['7', '30', 'month'] as ExpirationBucket[]).map((bucket) => {
-              const count = active.filter((item) => {
-                if (item.usage_status === 'used') return false;
-                if (bucket === '7') return item.days_remaining >= 0 && item.days_remaining <= 7;
-                if (bucket === '30') return item.days_remaining >= 0 && item.days_remaining <= 30;
-                return item.period_end >= monthBounds.start && item.period_end <= monthBounds.end;
-              }).length;
-              return (
-                <button
-                  className={`summary-card ${expirationBucket === bucket ? 'summary-card--selected' : ''}`}
-                  type="button"
-                  key={bucket}
-                  aria-pressed={expirationBucket === bucket}
-                  onClick={() => {
-                    setExpirationBucket(bucket);
-                    setMerchantInstanceId(null);
-                  }}
-                >
-                  <div className="summary-icon" aria-hidden="true">
-                    <Icon
-                      name={bucket === '7' ? 'alert' : bucket === '30' ? 'clock' : 'calendar'}
-                    />
-                  </div>
-                  <p>{expirationBucketLabels[bucket]}</p>
-                  <strong>{count}</strong>
-                  <span>{count ? 'Tap to review benefits' : 'Nothing due'}</span>
-                </button>
-              );
-            })}
-          </section>
-          <section className="panel attention-panel" aria-labelledby="attention-heading">
-            <div className="section-head">
-              <div>
-                <p className="eyebrow">Needs attention</p>
-                <h2 id="attention-heading">{expirationBucketLabels[expirationBucket]}</h2>
-              </div>
-              <button
-                className="text-button"
-                type="button"
-                onClick={() =>
-                  setFilters({
-                    ...initialFilters,
-                    expiration: expirationBucket === '7' ? '7' : '30',
-                  })
-                }
-              >
-                View in all benefits
-              </button>
+        <section className="dashboard-outstanding" aria-labelledby="outstanding-heading">
+          <div className="section-head">
+            <div>
+              <p className="eyebrow">{t('dashboard.outstanding')}</p>
+              <h2 id="outstanding-heading">{outstanding.length}</h2>
             </div>
-            {expirationDetails.length === 0 ? (
-              <div className="attention-empty">No unused benefits are due in this period.</div>
-            ) : (
-              <div className="attention-list">
-                {expirationDetails.map((item) => {
-                  const account = item.account_id ? accountById.get(item.account_id) : undefined;
+          </div>
+          {sections.map(({ group, instances }) => (
+            <section
+              className={`dashboard-group dashboard-group--${group}`}
+              key={group}
+              aria-labelledby={`group-${group}`}
+            >
+              <h3 id={`group-${group}`}>{t(groupLabels[group])}</h3>
+              <div className="dashboard-benefit-list">
+                {instances.map((instance) => {
+                  const account = instance.account_id
+                    ? accountById.get(instance.account_id)
+                    : undefined;
+                  const quantityOptions = {
+                    valueKind: instance.value_kind,
+                    currency: instance.currency,
+                    unitLabel: instance.unit_label,
+                    locale,
+                  } as const;
                   return (
-                    <div className="attention-item" key={item.instance_id}>
-                      <Link className="attention-copy" to={`/instances/${item.instance_id}`}>
-                        <strong>{item.benefit_name}</strong>
-                        <small>
-                          {cardLabel(account, item)}
+                    <article
+                      className={`dashboard-benefit dashboard-benefit--${group}`}
+                      key={instance.instance_id}
+                    >
+                      <div className="dashboard-benefit-main">
+                        <Link
+                          className="dashboard-benefit-name"
+                          to={`/instances/${instance.instance_id}`}
+                        >
+                          {instance.benefit_name}
+                        </Link>
+                        <span className="dashboard-benefit-card">
+                          {cardLabel(account, instance, localize)}
                           {account?.last_four ? ` · •••• ${account.last_four}` : ''}
-                        </small>
-                        <span className="attention-period">Ends {formatDate(item.period_end)}</span>
-                      </Link>
-                      {hasMerchantGuidance(item) && (
+                        </span>
+                        <span className="dashboard-benefit-condition">
+                          {conditionSummary(instance, t, locale)}
+                        </span>
+                      </div>
+                      <div className="dashboard-benefit-value">
+                        <strong>
+                          {formatQuantity(instance.remaining_quantity, quantityOptions)}
+                        </strong>
+                        <span>
+                          {t('dashboard.remaining')} {t('dashboard.of')}{' '}
+                          {formatQuantity(instance.available_quantity, quantityOptions)}
+                        </span>
+                      </div>
+                      <div className="dashboard-benefit-deadline">
+                        <strong>{relativeDeadline(instance, t, locale)}</strong>
+                        <span>
+                          {instance.usage_status === 'partial'
+                            ? t('dashboard.partial')
+                            : t('dashboard.available')}
+                        </span>
+                      </div>
+                      {hasMerchantGuidance(instance) && (
                         <div className="merchant-popover-wrap">
                           <button
                             className="merchant-button"
                             type="button"
-                            aria-expanded={merchantInstanceId === item.instance_id}
-                            aria-controls={`merchant-details-${item.instance_id}`}
+                            aria-expanded={merchantInstanceId === instance.instance_id}
+                            aria-controls={`merchant-details-${instance.instance_id}`}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Escape') setMerchantInstanceId(null);
+                            }}
                             onClick={() =>
                               setMerchantInstanceId((current) =>
-                                current === item.instance_id ? null : item.instance_id,
+                                current === instance.instance_id ? null : instance.instance_id,
                               )
                             }
                           >
-                            Eligible merchants
+                            {instance.merchant_category || t('dashboard.condition')}
                           </button>
-                          {merchantInstanceId === item.instance_id && (
+                          {merchantInstanceId === instance.instance_id && (
                             <div
-                              id={`merchant-details-${item.instance_id}`}
+                              id={`merchant-details-${instance.instance_id}`}
                               className="merchant-popover"
                               role="dialog"
-                              aria-label="Eligible merchant details"
+                              aria-label={t('dashboard.condition')}
                             >
-                              <strong>Eligible merchants</strong>
-                              {item.merchant_category && <span>{item.merchant_category}</span>}
-                              {item.eligibility_notes && <span>{item.eligibility_notes}</span>}
-                              {item.website && (
-                                <a href={item.website} target="_blank" rel="noreferrer">
-                                  Open eligible website
+                              <strong>{t('dashboard.condition')}</strong>
+                              {instance.merchant_category && (
+                                <span>{instance.merchant_category}</span>
+                              )}
+                              {instance.eligibility_notes && (
+                                <span>{instance.eligibility_notes}</span>
+                              )}
+                              {instance.website && (
+                                <a href={instance.website} target="_blank" rel="noreferrer">
+                                  {instance.website}
                                 </a>
                               )}
                             </div>
                           )}
                         </div>
                       )}
-                      <button
-                        className="text-link attention-confirm"
-                        type="button"
-                        onClick={() => void confirmUsed(item)}
-                        disabled={confirmingInstanceId === item.instance_id}
-                      >
-                        {confirmingInstanceId === item.instance_id ? 'Saving…' : 'Mark period used'}
-                      </button>
-                    </div>
+                      {instance.remaining_quantity === null ? (
+                        <>
+                          <button
+                            className="button button--secondary button--small"
+                            type="button"
+                            onClick={() => openUsage(instance)}
+                          >
+                            {t('dashboard.recordUsage')}
+                          </button>
+                          <button
+                            className="button button--secondary button--small"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void markComplete(instance)}
+                          >
+                            {t('dashboard.markComplete')}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="button button--secondary button--small"
+                          type="button"
+                          onClick={() => openUsage(instance)}
+                        >
+                          {t('dashboard.recordUsage')}
+                        </button>
+                      )}
+                    </article>
                   );
                 })}
               </div>
-            )}
-          </section>
-          <section className="panel benefit-views-panel" aria-labelledby="benefit-views-heading">
-            <div className="section-head section-head--wrap">
+            </section>
+          ))}
+        </section>
+      )}
+      {selected && (
+        <div className="modal-backdrop">
+          <section
+            ref={modalRef}
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quick-usage-title"
+          >
+            <div className="modal-head">
               <div>
-                <p className="eyebrow">Benefit views</p>
-                <h2 id="benefit-views-heading">{filtered.length} shown</h2>
+                <p className="eyebrow">{selected.benefit_name}</p>
+                <h2 id="quick-usage-title">{t('dashboard.confirmUsage')}</h2>
               </div>
-              <div className="toolbar">
-                <button
-                  className={`button button--secondary ${view === 'all' ? 'button--active' : ''}`}
-                  type="button"
-                  onClick={() => setView('all')}
-                >
-                  All periods
-                </button>
-                <button
-                  className={`button button--secondary ${view === 'month' ? 'button--active' : ''}`}
-                  type="button"
-                  onClick={() => setView('month')}
-                >
-                  Due this month
-                </button>
-              </div>
-              <div className="toolbar">
-                <label className="search-field">
-                  <span className="sr-only">Search benefits</span>
-                  <Icon name="search" />
-                  <input
-                    value={filters.query}
-                    onChange={(event) => setFilters({ ...filters, query: event.target.value })}
-                    placeholder="Search benefits, cards, merchants…"
-                  />
-                </label>
-                <button
-                  className={`button button--secondary ${filtersOpen ? 'button--active' : ''}`}
-                  type="button"
-                  aria-expanded={filtersOpen}
-                  aria-controls="benefit-filters"
-                  onClick={() => setFiltersOpen((open) => !open)}
-                >
-                  Filter{activeFilterCount ? ` (${activeFilterCount})` : ''}
-                </button>
-              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={t('common.close')}
+                onClick={() => setSelected(null)}
+              >
+                <Icon name="close" />
+              </button>
             </div>
-            {filtersOpen && (
-              <div id="benefit-filters" className="filters" aria-label="Benefit filters">
-                <label>
-                  <span>Card/account</span>
-                  <select
-                    value={filters.account}
-                    onChange={(event) => setFilters({ ...filters, account: event.target.value })}
-                  >
-                    <option value="">All accounts</option>
-                    {result.data?.accounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>Provider</span>
-                  <select
-                    value={filters.provider}
-                    onChange={(event) => setFilters({ ...filters, provider: event.target.value })}
-                  >
-                    <option value="">All providers</option>
-                    {providers.map((provider) => (
-                      <option key={provider}>{provider}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>Merchant</span>
-                  <input
-                    value={filters.merchant}
-                    onChange={(event) => setFilters({ ...filters, merchant: event.target.value })}
-                    placeholder="Filter by merchant"
-                  />
-                </label>
-                <label>
-                  <span>Category</span>
-                  <select
-                    value={filters.category}
-                    onChange={(event) => setFilters({ ...filters, category: event.target.value })}
-                  >
-                    <option value="">All categories</option>
-                    {categories.map((category) => (
-                      <option key={category}>{category}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>Lifecycle</span>
-                  <select
-                    value={filters.lifecycle}
-                    onChange={(event) =>
-                      setFilters({
-                        ...filters,
-                        lifecycle: event.target.value as DashboardFilters['lifecycle'],
-                      })
-                    }
-                  >
-                    <option value="">Any lifecycle</option>
-                    <option value="upcoming">Upcoming</option>
-                    <option value="active">Active</option>
-                    <option value="expired">Expired</option>
-                    <option value="void">Void</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Usage</span>
-                  <select
-                    value={filters.usage}
-                    onChange={(event) =>
-                      setFilters({
-                        ...filters,
-                        usage: event.target.value as DashboardFilters['usage'],
-                      })
-                    }
-                  >
-                    <option value="">Any usage</option>
-                    <option value="unused">Unused</option>
-                    <option value="partial">Partially used</option>
-                    <option value="used">Used</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Recurrence</span>
-                  <select
-                    value={filters.recurrence}
-                    onChange={(event) =>
-                      setFilters({
-                        ...filters,
-                        recurrence: event.target.value as DashboardFilters['recurrence'],
-                      })
-                    }
-                  >
-                    <option value="">Any recurrence</option>
-                    <option value="recurring">Recurring</option>
-                    <option value="one_time">One-time</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Expiration</span>
-                  <select
-                    value={filters.expiration}
-                    onChange={(event) =>
-                      setFilters({
-                        ...filters,
-                        expiration: event.target.value as DashboardFilters['expiration'],
-                      })
-                    }
-                  >
-                    <option value="">Any date</option>
-                    <option value="7">Within 7 days</option>
-                    <option value="30">Within 30 days</option>
-                    <option value="later">More than 30 days</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Enrollment</span>
-                  <select
-                    value={filters.enrollment}
-                    onChange={(event) =>
-                      setFilters({
-                        ...filters,
-                        enrollment: event.target.value as DashboardFilters['enrollment'],
-                      })
-                    }
-                  >
-                    <option value="">Any enrollment</option>
-                    <option value="required">Enrollment needed</option>
-                    <option value="complete">Enrollment complete</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Definition status</span>
-                  <select
-                    value={filters.active}
-                    onChange={(event) =>
-                      setFilters({
-                        ...filters,
-                        active: event.target.value as DashboardFilters['active'],
-                      })
-                    }
-                  >
-                    <option value="">Active and inactive</option>
-                    <option value="active">Active only</option>
-                    <option value="inactive">Inactive only</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Period versions</span>
-                  <select
-                    value={filters.audit}
-                    onChange={(event) =>
-                      setFilters({
-                        ...filters,
-                        audit: event.target.value as DashboardFilters['audit'],
-                      })
-                    }
-                  >
-                    <option value="live">Live periods only</option>
-                    <option value="all">Live and audit versions</option>
-                    <option value="void">Audit versions only</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Sort</span>
-                  <select
-                    value={filters.sort}
-                    onChange={(event) =>
-                      setFilters({
-                        ...filters,
-                        sort: event.target.value as DashboardFilters['sort'],
-                      })
-                    }
-                  >
-                    <option value="attention">Needs attention</option>
-                    <option value="expiration">Expiration</option>
-                    <option value="remaining">Remaining value</option>
-                    <option value="name">Name</option>
-                  </select>
-                </label>
+            <p className="muted">{t('dashboard.confirmBody')}</p>
+            <form className="form-stack" onSubmit={(event) => void saveUsage(event)}>
+              <label className="field">
+                <span>{t('dashboard.amountUsed')}</span>
+                <input
+                  required
+                  type="number"
+                  min="0.01"
+                  step={selected.value_kind === 'points' ? '1' : '0.01'}
+                  max={selected.remaining_quantity ?? undefined}
+                  value={amount ?? ''}
+                  onChange={(event) =>
+                    setAmount(event.target.value ? Number(event.target.value) : null)
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>{t('dashboard.dateUsed')}</span>
+                <input
+                  required
+                  type="date"
+                  value={usedOn}
+                  onChange={(event) => setUsedOn(event.target.value)}
+                />
+              </label>
+              {error && (
+                <div className="alert alert--danger" role="alert">
+                  {error}
+                </div>
+              )}
+              <div className="modal-actions">
                 <button
-                  className="text-button filter-reset"
+                  className="button button--secondary"
                   type="button"
-                  onClick={() => setFilters(initialFilters)}
+                  onClick={() => setSelected(null)}
                 >
-                  Clear filters
+                  {t('common.cancel')}
+                </button>
+                <button className="button button--primary" type="submit" disabled={busy}>
+                  {busy ? t('dashboard.saving') : t('dashboard.saveUsage')}
                 </button>
               </div>
-            )}
-            {filtered.length ? (
-              <BenefitTable
-                instances={filtered}
-                onConfirmUsed={confirmUsed}
-                confirmingInstanceId={confirmingInstanceId}
-                accountLabel={(item) => {
-                  const account = item.account_id ? accountById.get(item.account_id) : undefined;
-                  const label = cardLabel(account, item);
-                  return account?.last_four ? `${label} · •••• ${account.last_four}` : label;
-                }}
-              />
-            ) : (
-              <EmptyState title="No benefits match these filters">
-                <button className="text-button" onClick={() => setFilters(initialFilters)}>
-                  Clear filters and show everything
-                </button>
-              </EmptyState>
-            )}
+            </form>
           </section>
-        </>
+        </div>
       )}
     </div>
   );

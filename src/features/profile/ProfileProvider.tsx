@@ -4,6 +4,7 @@ import { ErrorState } from '../../components/AsyncState';
 import { LoadingScreen } from '../../components/LoadingScreen';
 import { getProfile } from '../../services/api';
 import type { Profile } from '../../types';
+import { I18nProvider } from '../i18n/I18nContext';
 import { ProfileContext, type ProfileContextValue } from './ProfileContext';
 
 export function ProfileProvider({
@@ -46,8 +47,23 @@ export function ProfileProvider({
     [profile, refreshProfile],
   );
 
-  if (loading) return <LoadingScreen />;
-  if (error) return <ErrorState error={error} onRetry={() => void refreshProfile()} />;
-  if (!value) return <ErrorState error={new Error('Profile settings are unavailable.')} />;
+  if (loading)
+    return (
+      <I18nProvider>
+        <LoadingScreen />
+      </I18nProvider>
+    );
+  if (error)
+    return (
+      <I18nProvider>
+        <ErrorState error={error} onRetry={() => void refreshProfile()} />
+      </I18nProvider>
+    );
+  if (!value)
+    return (
+      <I18nProvider>
+        <ErrorState error={new Error('Profile settings are unavailable.')} />
+      </I18nProvider>
+    );
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
 }
