@@ -52,7 +52,7 @@ export function sortOutstanding(instances: BenefitInstance[], today: string) {
     // Stable product order: urgency group, days, partial state, cadence, remaining/value, name, id.
     const group = GROUP_ORDER[urgencyGroup(a, today)] - GROUP_ORDER[urgencyGroup(b, today)];
     if (group) return group;
-    const days = a.days_remaining - b.days_remaining;
+    const days = daysBetween(today, a.period_end) - daysBetween(today, b.period_end);
     if (days) return days;
     const partial = Number(b.usage_status === 'partial') - Number(a.usage_status === 'partial');
     if (partial) return partial;

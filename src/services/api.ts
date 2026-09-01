@@ -4,6 +4,7 @@ import type {
   CatalogVerificationState,
   CardCatalogProduct,
   CardCatalogTemplate,
+  ConfirmBenefitPeriodResult,
   BenefitDefinition,
   BenefitInput,
   BenefitInstance,
@@ -142,6 +143,7 @@ export async function listCardCatalog(): Promise<CardCatalogProduct[]> {
         effective_from: row.product_effective_from as string | null,
         effective_to: row.product_effective_to as string | null,
         verification_notes: row.product_verification_notes as string | undefined,
+        metadata: (row.product_metadata ?? {}) as Record<string, unknown>,
         structured_content_hash: row.product_structured_content_hash as string | undefined,
         templates: [],
       };
@@ -184,6 +186,7 @@ export async function listCardCatalog(): Promise<CardCatalogProduct[]> {
       effective_from: row.benefit_effective_from as string | null,
       effective_to: row.benefit_effective_to as string | null,
       verification_notes: row.benefit_verification_notes as string | undefined,
+      metadata: (row.benefit_metadata ?? {}) as Record<string, unknown>,
       structured_content_hash: row.benefit_structured_content_hash as string | undefined,
     });
     product.age_days = Math.max(product.age_days, Number(row.age_days));
@@ -496,7 +499,21 @@ export async function confirmBenefitPeriodUsed(instanceId: string, usedOn: strin
     p_note: note ?? null,
   });
   fail(error);
-  return data as { instance_id: string; archived: boolean; generated_instances: number };
+  return data as ConfirmBenefitPeriodResult;
+}
+
+export async function reopenConfirmedBenefitPeriod(
+  instanceId: string,
+  confirmationRedemptionId?: string,
+) {
+  const params: { p_instance_id: string; p_confirmation_redemption_id?: string } = {
+    p_instance_id: instanceId,
+  };
+  if (confirmationRedemptionId) params.p_confirmation_redemption_id = confirmationRedemptionId;
+  const { error } = await requireSupabase().rpc('reopen_confirmed_benefit_period', {
+    ...params,
+  });
+  fail(error);
 }
 
 export async function markBenefitEnrolled(definitionId: string, enrolledAt: string) {

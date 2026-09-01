@@ -35,6 +35,7 @@ const api = vi.hoisted(() => ({
   markBenefitEnrolled: vi.fn(),
   markUncappedComplete: vi.fn(),
   reopenUncappedComplete: vi.fn(),
+  reopenConfirmedBenefitPeriod: vi.fn(),
   confirmBenefitPeriodUsed: vi.fn(),
   overrideInstance: vi.fn(),
   recordRedemption: vi.fn(),
@@ -113,7 +114,9 @@ beforeEach(() => {
     instance_id: '11111111-1111-4111-8111-111111111111',
     archived: false,
     generated_instances: 1,
+    confirmation_redemption_id: '55555555-5555-4555-8555-555555555555',
   });
+  api.reopenConfirmedBenefitPeriod.mockResolvedValue(undefined);
   api.createBenefit.mockResolvedValue({
     definition_id: '22222222-2222-4222-8222-222222222222',
     current_instance_id: null,
@@ -184,6 +187,7 @@ describe('authenticated core flows', () => {
     });
     expect(screen.getByLabelText(/Benefit anniversary\/reset date/)).toHaveValue('2026-08-15');
     await user.click(screen.getByRole('button', { name: 'Preview benefits' }));
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
     const source = screen.getByRole('link', { name: /Issuer source/i });
     expect(source).toHaveAttribute('target', '_blank');
     expect(source).toHaveAttribute('rel', 'noopener noreferrer');
@@ -401,6 +405,133 @@ describe('authenticated core flows', () => {
     );
   });
 
+  it('closes account dialogs with Escape and restores the opening focus', async () => {
+    const user = userEvent.setup();
+    renderRoute('/accounts', '/accounts', <AccountsPage />);
+
+    const addAccount = await screen.findByRole('button', { name: '+ Add account' });
+    await user.click(addAccount);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(addAccount).toHaveFocus();
+  });
+
+  it('traps focus in instance dialogs and restores focus after Escape', async () => {
+    const user = userEvent.setup();
+    const instance = benefitInstance();
+    api.getInstance.mockResolvedValue(instance);
+    renderRoute(`/instances/${instance.instance_id}`, '/instances/:instanceId', <InstancePage />);
+
+    const recordUsage = (await screen.findAllByRole('button', { name: /Record usage/i }))[0]!;
+    await user.click(recordUsage);
+    const dialog = screen.getByRole('dialog');
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>('button, input, textarea, select, [href]'),
+    ).filter((element) => !element.hasAttribute('disabled'));
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    first.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+    last.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(first);
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(recordUsage).toHaveFocus();
+
+    const override = screen.getByRole('button', { name: 'Override this period' });
+    await user.click(override);
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(override).toHaveFocus();
+  });
+
+  it('hides period override for audit instances', async () => {
+    const instance = benefitInstance({
+      is_live: false,
+      is_audit_version: true,
+      lifecycle_status: 'void',
+    });
+    api.getInstance.mockResolvedValue(instance);
+    renderRoute(`/instances/${instance.instance_id}`, '/instances/:instanceId', <InstancePage />);
+
+    expect(
+      await screen.findByRole('heading', { name: instance.benefit_name, level: 2 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Override this period' })).not.toBeInTheDocument();
+  });
+
+  it('closes the override dialog with Escape and restores its opening focus', async () => {
+    const user = userEvent.setup();
+    const instance = benefitInstance();
+    api.getInstance.mockResolvedValue(instance);
+    renderRoute(`/instances/${instance.instance_id}`, '/instances/:instanceId', <InstancePage />);
+
+    const override = await screen.findByRole('button', { name: 'Override this period' });
+    await user.click(override);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(override).toHaveFocus();
+  });
+
+  it('reopens an archived one-time confirmation for explicit correction', async () => {
+    const user = userEvent.setup();
+    const instance = benefitInstance({
+      recurrence_type: 'one_time',
+      recurrence_enabled: false,
+      is_live: false,
+      is_audit_version: true,
+      lifecycle_status: 'void',
+      voided_at: '2028-02-21T00:00:00Z',
+      void_reason: 'Confirmed used; archived from dashboard',
+    });
+    api.getInstance.mockResolvedValue(instance);
+    renderRoute(`/instances/${instance.instance_id}`, '/instances/:instanceId', <InstancePage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Correct confirmation' }));
+    await waitFor(() =>
+      expect(api.reopenConfirmedBenefitPeriod).toHaveBeenCalledWith(instance.instance_id),
+    );
+    expect(screen.getByRole('button', { name: 'Correct confirmation' })).toBeInTheDocument();
+  });
+
+  it('keeps archived redemption history read-only until correction reopens it', async () => {
+    const instance = benefitInstance({
+      recurrence_type: 'one_time',
+      recurrence_enabled: false,
+      is_live: false,
+      is_audit_version: true,
+      lifecycle_status: 'void',
+      voided_at: '2028-02-21T00:00:00Z',
+      void_reason: 'Confirmed used; archived from dashboard',
+    });
+    api.getInstance.mockResolvedValue(instance);
+    api.listRedemptions.mockResolvedValue([
+      {
+        id: '55555555-5555-4555-8555-555555555555',
+        benefit_instance_id: instance.instance_id,
+        user_id: '11111111-1111-4111-8111-111111111111',
+        quantity: 10,
+        used_on: '2028-02-20',
+        merchant: null,
+        transaction_description: null,
+        notes: 'Confirmed in lifecycle test',
+        created_at: '2028-02-20T00:00:00Z',
+        updated_at: '2028-02-20T00:00:00Z',
+      },
+    ]);
+    renderRoute(`/instances/${instance.instance_id}`, '/instances/:instanceId', <InstancePage />);
+
+    expect(await screen.findByText('Confirmed in lifecycle test')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+  });
+
   it('does not show reset reminders on the dashboard', async () => {
     api.listInstances.mockResolvedValue([
       benefitInstance({
@@ -441,6 +572,75 @@ describe('authenticated core flows', () => {
       ),
     );
     expect(screen.queryByText('Navigation complete')).not.toBeInTheDocument();
+  });
+
+  it('confirms a finite benefit in one click and removes it immediately', async () => {
+    const user = userEvent.setup();
+    const instance = benefitInstance({
+      recurrence_type: 'one_time',
+      recurrence_enabled: false,
+    });
+    api.confirmBenefitPeriodUsed.mockResolvedValueOnce({
+      instance_id: instance.instance_id,
+      archived: true,
+      generated_instances: 0,
+      confirmation_redemption_id: '55555555-5555-4555-8555-555555555555',
+    });
+    api.listInstances.mockResolvedValue([instance]);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    expect(await screen.findByRole('link', { name: instance.benefit_name })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirm used' }));
+
+    await waitFor(() =>
+      expect(api.confirmBenefitPeriodUsed).toHaveBeenCalledWith(
+        instance.instance_id,
+        expect.any(String),
+        'Confirmed used from dashboard.',
+      ),
+    );
+    expect(screen.queryByRole('link', { name: instance.benefit_name })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open benefit details' })).toHaveAttribute(
+      'href',
+      `/instances/${instance.instance_id}`,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Undo usage' }));
+    await waitFor(() =>
+      expect(api.reopenConfirmedBenefitPeriod).toHaveBeenCalledWith(
+        instance.instance_id,
+        '55555555-5555-4555-8555-555555555555',
+      ),
+    );
+    expect(await screen.findByRole('link', { name: instance.benefit_name })).toBeInTheDocument();
+  });
+
+  it('keeps dashboard undo for an archived manual confirmation without a redemption marker', async () => {
+    const user = userEvent.setup();
+    const instance = benefitInstance({
+      value_kind: 'percentage_cashback',
+      available_quantity: null,
+      remaining_quantity: 10,
+      recurrence_type: 'one_time',
+      recurrence_enabled: false,
+    });
+    api.confirmBenefitPeriodUsed.mockResolvedValueOnce({
+      instance_id: instance.instance_id,
+      archived: true,
+      generated_instances: 0,
+      confirmation_redemption_id: null,
+    });
+    api.listInstances.mockResolvedValue([instance]);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Confirm used' }));
+    expect(await screen.findByRole('button', { name: 'Undo usage' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Undo usage' }));
+
+    await waitFor(() =>
+      expect(api.reopenConfirmedBenefitPeriod).toHaveBeenCalledWith(instance.instance_id),
+    );
+    expect(api.deleteRedemption).not.toHaveBeenCalled();
   });
 
   it('completes an uncapped benefit, exposes undo, and refreshes outstanding data', async () => {
@@ -509,6 +709,27 @@ describe('authenticated core flows', () => {
       }),
     );
     expect(api.confirmBenefitPeriodUsed).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Open benefit details' })).toHaveAttribute(
+      'href',
+      `/instances/${instance.instance_id}`,
+    );
+  });
+
+  it('rejects quick usage above a finite benefit balance before calling the API', async () => {
+    const user = userEvent.setup();
+    const instance = benefitInstance();
+    api.listInstances.mockResolvedValue([instance]);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Record usage' }));
+    fireEvent.change(screen.getByLabelText('Amount used'), { target: { value: '10.01' } });
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Enter an amount no greater than the remaining balance.',
+    );
+    expect(api.confirmBenefitPeriodUsed).not.toHaveBeenCalled();
+    expect(api.recordRedemption).not.toHaveBeenCalled();
   });
 
   it('shows uncapped completion failures outside the usage dialog', async () => {
@@ -605,11 +826,69 @@ describe('authenticated core flows', () => {
     expect(screen.queryByRole('button', { name: 'Eligible merchants' })).not.toBeInTheDocument();
   });
 
+  it('keeps fixed-merchant credits compact while exposing broad merchant guidance', async () => {
+    api.listInstances.mockResolvedValue([
+      benefitInstance({
+        instance_id: 'fixed-merchant',
+        benefit_name: 'Dunkin credit',
+        merchant: 'Dunkin',
+        merchant_category: 'Dining',
+        eligibility_notes: 'Eligible Dunkin purchases.',
+      }),
+      benefitInstance({
+        instance_id: 'fixed-merchant-uber',
+        benefit_name: 'Uber credit',
+        merchant: 'Uber',
+        merchant_category: 'Rideshare',
+        eligibility_notes: 'Eligible Uber purchases.',
+      }),
+      benefitInstance({
+        instance_id: 'broad-merchant',
+        benefit_name: 'Dining credit',
+        merchant: 'Participating airlines',
+        merchant_category: 'Travel',
+        eligibility_notes: 'Eligible airline purchases.',
+      }),
+      benefitInstance({
+        instance_id: 'multi-merchant',
+        benefit_name: 'Travel merchant credit',
+        merchant: 'Dunkin, Uber',
+        merchant_category: 'Travel',
+        eligibility_notes: 'Eligible purchases.',
+      }),
+    ]);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    expect(await screen.findByRole('link', { name: 'Dunkin credit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Dunkin' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Uber credit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Uber' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Participating airlines' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dunkin, Uber' })).toBeInTheDocument();
+  });
+
   it('uses the saved profile timezone for new benefit and redemption dates', async () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2028-01-01T10:30:00Z'));
     const pacificProfile = profileFixture({ timezone: 'Pacific/Kiritimati' });
     renderRoute('/benefits/new', '/benefits/new', <BenefitFormPage />, pacificProfile);
     expect(await screen.findByLabelText('Effective date')).toHaveValue('2028-01-02');
+    now.mockRestore();
+  });
+
+  it('defaults quick usage to the saved profile timezone date', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2028-01-01T10:30:00Z'));
+    const pacificProfile = profileFixture({ timezone: 'Pacific/Kiritimati' });
+    const instance = benefitInstance({
+      period_start: '2028-01-01',
+      period_end: '2028-01-31',
+      days_remaining: 30,
+    });
+    api.listInstances.mockResolvedValue([instance]);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />, pacificProfile);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Record usage' }));
+    expect(screen.getByLabelText('Date used')).toHaveValue('2028-01-02');
     now.mockRestore();
   });
 

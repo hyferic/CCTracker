@@ -6,7 +6,9 @@ select no_plan();
 
 create temporary table import_result (payload jsonb);
 create temporary table definition_only_result (payload jsonb);
+create temporary table confirmation_import_result (payload jsonb);
 grant all on table import_result, definition_only_result to authenticated;
+grant all on table confirmation_import_result to authenticated;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
@@ -128,6 +130,115 @@ select is((
   join public.benefit_definitions d on d.id = i.definition_id
   where d.name = 'Imported annual credit'
 ), 0::bigint, 'incoming notification authority is ignored');
+
+insert into confirmation_import_result(payload)
+select public.import_backup(
+  jsonb_build_object(
+    'schema_version', 1,
+    'accounts', '[]'::jsonb,
+    'definitions', jsonb_build_array(jsonb_build_object(
+      'id', 'source-confirmation-definition',
+      'name', 'Imported confirmed one-time credit',
+      'category', 'Testing',
+      'value_kind', 'money',
+      'benefit_amount', 100,
+      'currency', 'USD',
+      'effective_date', current_date,
+      'end_date', current_date + 10,
+      'recurrence_type', 'one_time',
+      'recurrence_basis', 'none'
+    )),
+    'revisions', jsonb_build_array(jsonb_build_object(
+      'id', 'source-confirmation-revision',
+      'definition_id', 'source-confirmation-definition',
+      'revision_no', 1,
+      'valid_from', current_date,
+      'name', 'Imported confirmed one-time credit',
+      'category', 'Testing',
+      'value_kind', 'money',
+      'benefit_amount', 100,
+      'currency', 'USD',
+      'effective_date', current_date,
+      'end_date', current_date + 10,
+      'recurrence_type', 'one_time',
+      'recurrence_basis', 'none'
+    )),
+    'instances', jsonb_build_array(jsonb_build_object(
+      'id', 'source-confirmation-instance',
+      'definition_id', 'source-confirmation-definition',
+      'revision_id', 'source-confirmation-revision',
+      'occurrence_key', 'once:import-confirmed',
+      'instance_version', 1,
+      'recurrence_sequence', 0,
+      'nominal_start', current_date,
+      'nominal_end', current_date + 10,
+      'period_start', current_date,
+      'period_end', current_date + 10,
+      'value_kind', 'money',
+      'available_quantity', 100,
+      'is_uncapped', false,
+      'currency', 'USD',
+      'unit_label', 'USD',
+      'period_label', 'Imported confirmed current period',
+      'confirmation_redemption_id', 'source-confirmation-redemption',
+      'confirmation_manual_completion', false,
+      'voided_at', current_date,
+      'void_reason', 'Confirmed used; archived from dashboard'
+    )),
+    'redemptions', jsonb_build_array(
+      jsonb_build_object(
+        'id', 'source-confirmation-pre-existing',
+        'benefit_instance_id', 'source-confirmation-instance',
+        'redeemed_quantity', 40,
+        'used_date', current_date,
+        'notes', 'Pre-existing imported usage'
+      ),
+      jsonb_build_object(
+        'id', 'source-confirmation-redemption',
+        'benefit_instance_id', 'source-confirmation-instance',
+        'redeemed_quantity', 60,
+        'used_date', current_date,
+        'notes', 'Confirmed used from dashboard.'
+      )
+    )
+  ),
+  'import_as_new',
+  'suppress_current'
+);
+
+select is((payload->>'instances_imported')::integer, 1,
+  'archived confirmation instance is restored')
+from confirmation_import_result;
+select is((payload->>'redemptions_imported')::integer, 2,
+  'confirmation and pre-existing redemptions are both restored')
+from confirmation_import_result;
+select ok((
+  select i.confirmation_redemption_id is not null
+    and i.confirmation_redemption_id::text <> 'source-confirmation-redemption'
+    and i.confirmation_manual_completion = false
+  from public.benefit_instances i
+  join public.benefit_definitions d on d.id = i.definition_id
+  where d.name = 'Imported confirmed one-time credit'
+), 'restore remaps confirmation identity without trusting the source redemption id');
+select lives_ok(format(
+  'select public.reopen_confirmed_benefit_period(%L::uuid)',
+  (select i.id
+   from public.benefit_instances i
+   join public.benefit_definitions d on d.id = i.definition_id
+   where d.name = 'Imported confirmed one-time credit')
+), 'restored confirmation remains correctable after redemption ids change');
+select is((select count(*)
+  from public.redemptions r
+  join public.benefit_instances i on i.id = r.benefit_instance_id
+  join public.benefit_definitions d on d.id = i.definition_id
+  where d.name = 'Imported confirmed one-time credit'),
+  1::bigint, 'restored correction removes only the remapped confirmation redemption');
+select is((select sum(r.redeemed_quantity)
+  from public.redemptions r
+  join public.benefit_instances i on i.id = r.benefit_instance_id
+  join public.benefit_definitions d on d.id = i.definition_id
+  where d.name = 'Imported confirmed one-time credit'),
+  40::numeric, 'restored correction preserves the pre-existing redemption');
 
 insert into definition_only_result(payload)
 select public.import_backup(

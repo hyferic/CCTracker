@@ -3,8 +3,10 @@ import type { BenefitInput } from '../types';
 import {
   createBenefit,
   editBenefit,
+  listDefinitions,
   listInstances,
   recordRedemption,
+  reopenConfirmedBenefitPeriod,
   setBenefitActive,
 } from './api';
 
@@ -63,6 +65,46 @@ describe('Supabase API contracts', () => {
 
     expect(client.from).toHaveBeenNthCalledWith(1, 'benefit_instance_overview');
     expect(client.from).toHaveBeenNthCalledWith(2, 'benefit_instance_dashboard');
+  });
+
+  it('maps legacy definition columns into the current client shape', async () => {
+    const query = {
+      select: vi.fn(),
+      order: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: 'definition',
+            name: 'Legacy benefit',
+            active: 1,
+            benefit_amount: 25,
+            recurrence_basis: 'none',
+            description: null,
+            notes: null,
+            eligibility_notes: null,
+            tags: null,
+            expiration_reminder_enabled: 0,
+            reactivation_reminder_enabled: 1,
+          },
+        ],
+        error: null,
+      }),
+    };
+    query.select.mockReturnValue(query);
+    client.from.mockReturnValue(query);
+
+    const [definition] = await listDefinitions();
+
+    expect(definition).toMatchObject({
+      id: 'definition',
+      amount: 25,
+      recurrence_basis: 'calendar',
+      description: '',
+      notes: '',
+      eligibility_notes: '',
+      tags: [],
+      expiration_email_enabled: false,
+      reactivation_email_enabled: true,
+    });
   });
 
   it('maps create and edit form names to lifecycle RPC payload names', async () => {
@@ -131,6 +173,17 @@ describe('Supabase API contracts', () => {
       p_merchant: 'Rideshare Co',
       p_transaction_description: 'Trip',
       p_notes: null,
+    });
+  });
+
+  it('uses the explicit archived one-time correction RPC', async () => {
+    client.rpc.mockResolvedValueOnce({ data: null, error: null });
+
+    await reopenConfirmedBenefitPeriod('instance', 'redemption');
+
+    expect(client.rpc).toHaveBeenCalledWith('reopen_confirmed_benefit_period', {
+      p_instance_id: 'instance',
+      p_confirmation_redemption_id: 'redemption',
     });
   });
 });

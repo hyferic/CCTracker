@@ -25,9 +25,8 @@ Recurring definitions and immutable revisions are separate from versioned benefi
 
 ## Product capabilities
 
-- Dashboard summaries by currency without inventing exchange rates.
-- Dashboard view for live benefits expiring in the current local calendar month, with a quick “Confirm used” action.
-- Search across benefit, account, provider, merchant, and notes; sorting and filters for account, provider, merchant, category, lifecycle, usage, recurrence, expiration, enrollment, active/inactive definitions, and live/audit period versions.
+- Dashboard view of only live, outstanding benefits (unused or partially used), automatically grouped by urgency from soon through no deadline, with a quick “Confirm used” action.
+- Benefit history and management pages retain search, sorting, and lifecycle/audit controls; the focused Dashboard intentionally has no filters.
 - Fixed money, capped or uncapped percentage cashback, points, memberships, and custom-unit benefits.
 - Calendar monthly/quarterly/semiannual/annual periods and anchored/custom N-month recurrence.
 - End-of-month and leap-day-safe arithmetic using original anchors.
@@ -110,7 +109,7 @@ Supabase injects `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` into its Edge ru
 
 ## Database and email setup
 
-The seven ordered SQL migrations create extensions, owner-scoped tables, immutable revisions, versioned instances, RLS/grants, transactional lifecycle/import RPCs, scheduler RPCs, and the Vault-backed Cron installer. Apply them through the protected backend workflow; do not edit an already deployed migration.
+The ordered SQL migrations create extensions, owner-scoped tables, immutable revisions, versioned instances, RLS/grants, transactional lifecycle/import RPCs, scheduler RPCs, and the Vault-backed Cron installer. Apply them through the protected backend workflow; do not edit an already deployed migration.
 
 Benefit messages use the Resend HTTP API from `process-notifications`. Magic links use Supabase Auth custom SMTP with a different Resend credential. Verify the sender domain, disable link tracking for Auth messages, set Edge secrets, create the two named Vault entries, deploy the backend, and install/verify the Cron job. GitHub Pages never receives either mail credential.
 
@@ -130,7 +129,7 @@ npm run verify          # format, lint, typecheck, Vitest, build (not SQL/Edge/E
 node scripts/check-secrets.mjs
 ```
 
-The CI backend job starts/resets local Supabase, runs database lint and pgTAP, runs the native Deno suite, serves the Edge Function with a guarded fake mail transport, exercises HTTP authorization and RPC orchestration, and stops services. The E2E job derives the actual local API URL and publishable/anon key, signs in the seeded owner with a local-only password grant, then exercises account and benefit create/edit/deactivate, redemption/status/remaining value, dashboard filters, and transactional malformed-import rollback through the real UI, RPCs, RLS, and database. Chromium and WebKit separately run the unauthenticated accessibility shell. Real Resend delivery remains a production validation step.
+The CI backend job starts/resets local Supabase, runs database lint and pgTAP, runs the native Deno suite, serves the Edge Function with a guarded fake mail transport, exercises HTTP authorization and RPC orchestration, and stops services. The E2E job derives the actual local API URL and publishable/anon key, signs in the seeded owner with a local-only password grant, then exercises account and benefit create/edit/deactivate, redemption/status/remaining value, the focused no-filter outstanding dashboard, and transactional malformed-import rollback through the real UI, RPCs, RLS, and database. Chromium and WebKit separately run the unauthenticated accessibility shell. Real Resend delivery remains a production validation step.
 
 To run only the unauthenticated cross-browser shell locally, `npm run test:e2e` needs no Supabase stack. To include the authenticated contract after starting/resetting local Supabase, export its browser-safe values and the explicit gate:
 

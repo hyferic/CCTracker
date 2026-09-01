@@ -36,12 +36,15 @@ alter table private.card_catalog_product_versions
     pg_catalog.encode(
       extensions.digest(
         pg_catalog.convert_to(
-          concat_ws('|', stable_key, version::text, issuer, product_name,
-            card_type, market_scope, coalesce(annual_fee::text, ''),
-            coalesce(annual_fee_currency, ''), coalesce(official_product_url, ''),
-            array_to_string(official_source_urls, ','), verification_state,
-            coalesce(effective_from::text, ''), coalesce(effective_to::text, ''),
-            coalesce(verification_notes, ''), metadata::text),
+          coalesce(stable_key, '') || '|' || coalesce(version::text, '') || '|'
+            || coalesce(issuer, '') || '|' || coalesce(product_name, '') || '|'
+            || coalesce(card_type, '') || '|' || coalesce(market_scope, '') || '|'
+            || coalesce(annual_fee::text, '') || '|' || coalesce(annual_fee_currency, '') || '|'
+            || coalesce(official_product_url, '') || '|'
+            || coalesce(array_to_string(official_source_urls, ','), '') || '|'
+            || coalesce(verification_state, '') || '|'
+            || coalesce(effective_from::text, '') || '|' || coalesce(effective_to::text, '') || '|'
+            || coalesce(verification_notes, '') || '|' || coalesce(metadata::text, ''),
           'UTF8'),
         'sha256'),
       'hex')
@@ -69,16 +72,19 @@ alter table private.card_catalog_template_versions
     pg_catalog.encode(
       extensions.digest(
         pg_catalog.convert_to(
-          concat_ws('|', stable_key, version::text, product_version_id::text,
-            name, benefit_description, coalesce(benefit_value::text, ''),
-            coalesce(benefit_currency, ''), coalesce(benefit_unit, ''),
-            coalesce(structured_recurrence_type::text, ''),
-            coalesce(structured_recurrence_basis::text, ''), reset_strategy,
-            activation_required::text, eligibility::text, limits::text,
-            array_to_string(merchant_scope, ','),
-            array_to_string(official_source_urls, ','), verification_state,
-            coalesce(effective_from::text, ''), coalesce(effective_to::text, ''),
-            coalesce(verification_notes, ''), metadata::text),
+          coalesce(stable_key, '') || '|' || coalesce(version::text, '') || '|'
+            || coalesce(product_version_id::text, '') || '|' || coalesce(name, '') || '|'
+            || coalesce(benefit_description, '') || '|' || coalesce(benefit_value::text, '') || '|'
+            || coalesce(benefit_currency, '') || '|' || coalesce(benefit_unit, '') || '|'
+            || coalesce(structured_recurrence_type::text, '') || '|'
+            || coalesce(structured_recurrence_basis::text, '') || '|'
+            || coalesce(reset_strategy, '') || '|' || coalesce(activation_required::text, '') || '|'
+            || coalesce(eligibility::text, '') || '|' || coalesce(limits::text, '') || '|'
+            || coalesce(array_to_string(merchant_scope, ','), '') || '|'
+            || coalesce(array_to_string(official_source_urls, ','), '') || '|'
+            || coalesce(verification_state, '') || '|' || coalesce(effective_from::text, '') || '|'
+            || coalesce(effective_to::text, '') || '|' || coalesce(verification_notes, '') || '|'
+            || coalesce(metadata::text, ''),
           'UTF8'),
         'sha256'),
       'hex')
@@ -561,7 +567,9 @@ select
   t.verification_state as benefit_verification_state,
   t.effective_from as benefit_effective_from, t.effective_to as benefit_effective_to,
   t.verification_notes as benefit_verification_notes,
-  t.structured_content_hash as benefit_structured_content_hash
+  t.structured_content_hash as benefit_structured_content_hash,
+  p.metadata as product_metadata,
+  t.metadata as benefit_metadata
 from private.card_catalog_product_versions p
 join private.card_catalog_template_versions t on t.product_version_id = p.id
 where p.is_current and p.status = 'current'
@@ -586,7 +594,25 @@ with products as (
     count(*) filter (where is_current and status = 'current'
       and verification_state = 'verified') as verified_product_count,
     count(*) filter (where is_current and status = 'current'
-      and verification_state <> 'verified') as pending_product_count
+      and verification_state <> 'verified') as pending_product_count,
+    coalesce(jsonb_agg(
+      jsonb_build_object(
+        'stable_key', stable_key,
+        'version', version,
+        'product_name', product_name,
+        'card_type', card_type,
+        'official_url', official_url,
+        'official_product_url', official_product_url,
+        'official_source_urls', official_source_urls,
+        'verification_state', verification_state,
+        'verified_on', verified_on,
+        'effective_from', effective_from,
+        'effective_to', effective_to,
+        'structured_content_hash', structured_content_hash,
+        'metadata', metadata
+      ) order by stable_key, version
+    ) filter (where is_current and status = 'current'), '[]'::jsonb)
+      as current_products
   from private.card_catalog_product_versions
   group by issuer
 ), templates as (
@@ -629,7 +655,8 @@ select i.issuer_key, i.issuer_name, i.in_scope, i.notes,
     else 'covered'
   end as coverage_state,
   'Counts installed catalog rows only; not a claim of complete issuer product-market coverage.'
-    as coverage_basis
+    as coverage_basis,
+  coalesce(p.current_products, '[]'::jsonb) as current_products
 from private.card_catalog_target_issuers i
 left join products p on p.issuer = i.issuer_name
 left join templates t on t.issuer = i.issuer_name

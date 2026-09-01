@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { EmptyState, ErrorState, SkeletonRows } from '../components/AsyncState';
 import { Icon } from '../components/Icon';
@@ -17,59 +17,55 @@ import {
   type AccountWrite,
 } from '../services/api';
 import type { Account, CardCatalogProduct, RecurrenceType, TemplateSelection } from '../types';
-import { recurrenceTypeLabel, useI18n } from '../features/i18n/I18nContext';
+import { useI18n, type MessageKey } from '../features/i18n/I18nContext';
 
-function catalogTypeLabel(
-  type: CardCatalogProduct['card_type'],
-  localize: (english: string, simplifiedChinese: string) => string,
-) {
+type T = (key: MessageKey) => string;
+
+function catalogTypeLabel(type: CardCatalogProduct['card_type'], t: T) {
   switch (type) {
     case 'business':
-      return localize('Business', '商业卡');
+      return t('accounts.cardType.business');
     case 'student':
-      return localize('Student', '学生卡');
+      return t('accounts.cardType.student');
     case 'secured':
-      return localize('Secured', '担保卡');
+      return t('accounts.cardType.secured');
     case 'co_branded':
-      return localize('Co-branded', '联名卡');
+      return t('accounts.cardType.coBranded');
     case 'charge':
-      return localize('Charge card', '签账卡');
+      return t('accounts.cardType.charge');
     case 'other':
-      return localize('Other', '其他');
+      return t('accounts.cardType.other');
     default:
-      return localize('Consumer', '消费卡');
+      return t('accounts.cardType.consumer');
   }
 }
 
-function catalogVerificationLabel(
-  state: CardCatalogProduct['verification_state'],
-  localize: (english: string, simplifiedChinese: string) => string,
-) {
+function catalogVerificationLabel(state: CardCatalogProduct['verification_state'], t: T) {
   switch (state) {
     case 'verified':
-      return localize('Verified', '已核验');
+      return t('accounts.verification.verified');
     case 'limited':
-      return localize('Limited review', '有限核验');
+      return t('accounts.verification.limited');
     case 'contingent':
-      return localize('Needs qualification review', '需核对资格');
+      return t('accounts.verification.contingent');
     default:
-      return localize('Pending review', '待核验');
+      return t('accounts.verification.pending');
   }
 }
 
 function dateStrategyLabel(
   strategy: CardCatalogProduct['templates'][number]['date_strategy'],
-  localize: (english: string, simplifiedChinese: string) => string,
+  t: T,
 ) {
   switch (strategy) {
     case 'account_anniversary':
-      return localize('Account anniversary', '账户周年');
+      return t('accounts.dateStrategy.accountAnniversary');
     case 'qualification_cycle':
-      return localize('Qualification cycle', '资格周期');
+      return t('accounts.dateStrategy.qualificationCycle');
     case 'fixed':
-      return localize('Fixed dates', '固定日期');
+      return t('accounts.dateStrategy.fixed');
     default:
-      return localize('Calendar', '自然日历');
+      return t('accounts.dateStrategy.calendar');
   }
 }
 
@@ -77,24 +73,23 @@ function periodPreview(
   template: CardCatalogProduct['templates'][number],
   anniversary: string | null,
   firstQualifyingMonth: string | undefined,
-  localize: (english: string, simplifiedChinese: string) => string,
   formatRecurrenceType: (type: RecurrenceType) => string,
   locale: string,
+  t: T,
 ) {
   if (template.fixed_start && template.fixed_end)
     return `${formatDate(template.fixed_start, locale)} – ${formatDate(template.fixed_end, locale)}`;
   if (template.date_strategy === 'account_anniversary')
     return anniversary
-      ? `${localize('Annual period anchored', '年度周期锚定于')} ${anniversary}`
-      : localize('Anniversary date required', '需要周年日期');
+      ? `${t('accounts.periodPreview.annualAnchored')} ${formatDate(anniversary, locale)}`
+      : t('accounts.periodPreview.anniversaryRequired');
   if (template.date_strategy === 'qualification_cycle') {
-    if (!firstQualifyingMonth)
-      return localize('First qualifying month required', '需要首个合格月份');
+    if (!firstQualifyingMonth) return t('accounts.periodPreview.firstQualifyingMonthRequired');
     const [year, month] = firstQualifyingMonth.split('-').map(Number);
-    if (!year || !month) return localize('First qualifying month required', '需要首个合格月份');
+    if (!year || !month) return t('accounts.periodPreview.firstQualifyingMonthRequired');
     const expectedIndex = year * 12 + month - 1 + 11;
     const expectedDate = `${Math.floor(expectedIndex / 12)}-${String((expectedIndex % 12) + 1).padStart(2, '0')}-01`;
-    return `${localize('Expected qualification begins', '预计合格期开始于')} ${formatDate(expectedDate, locale)}`;
+    return `${t('accounts.periodPreview.expectedQualificationBegins')} ${formatDate(expectedDate, locale)}`;
   }
   const rawCadence = template.payload.recurrence_type;
   const cadence =
@@ -103,8 +98,21 @@ function periodPreview(
       ? (rawCadence as RecurrenceType)
       : null;
   return cadence
-    ? `${localize('Current', '当前')} ${formatRecurrenceType(cadence)} ${localize('calendar period', '日历周期')}`
-    : localize('Current calendar period', '当前日历周期');
+    ? `${t('accounts.periodPreview.current')} ${formatRecurrenceType(cadence)} ${t('accounts.periodPreview.calendarPeriod')}`
+    : t('accounts.periodPreview.currentCalendarPeriod');
+}
+
+function recurrenceTypeKey(type: RecurrenceType): MessageKey {
+  return (
+    {
+      one_time: 'benefits.oneTime',
+      monthly: 'benefitForm.monthly',
+      quarterly: 'benefitForm.quarterly',
+      semiannual: 'benefitForm.semiannual',
+      annual: 'benefitForm.annual',
+      custom: 'benefitForm.customMonthInterval',
+    } satisfies Record<RecurrenceType, MessageKey>
+  )[type];
 }
 
 const emptyAccount: AccountWrite = {
@@ -138,9 +146,8 @@ function fromAccount(account: Account): AccountWrite {
 }
 
 export function AccountsPage() {
-  const { language, t, localize } = useI18n();
-  const formatRecurrenceType = (type: Parameters<typeof recurrenceTypeLabel>[0]) =>
-    recurrenceTypeLabel(type, localize);
+  const { language, t } = useI18n();
+  const formatRecurrenceType = (type: RecurrenceType) => t(recurrenceTypeKey(type));
   const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US';
   const result = useAsync(listAccounts);
   const catalog = useAsync(listCardCatalog);
@@ -159,6 +166,8 @@ export function AccountsPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const products = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -170,6 +179,8 @@ export function AccountsPage() {
   }, [catalog.data, query]);
 
   function open(account: Account | 'new') {
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setEditing(account);
     setForm(account === 'new' ? emptyAccount : fromAccount(account));
     setStep(account === 'new' ? 1 : 2);
@@ -184,6 +195,42 @@ export function AccountsPage() {
     setError(null);
     setMessage(null);
   }
+
+  useEffect(() => {
+    if (!editing) {
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+      return;
+    }
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = () =>
+      Array.from(
+        dialog.querySelectorAll<HTMLElement>('button, input, textarea, select, [href]'),
+      ).filter((element) => !element.hasAttribute('disabled'));
+    focusable()[0]?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setEditing(null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const elements = focusable();
+      if (!elements.length) return;
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [editing, step]);
 
   function chooseProduct(next: CardCatalogProduct) {
     setProduct(next);
@@ -235,12 +282,7 @@ export function AccountsPage() {
           !parsed.benefit_anniversary_date &&
           !parsed.renewal_date
         )
-          throw new Error(
-            localize(
-              'Enter an annual-fee renewal date or a separate benefit anniversary/reset date for the selected anniversary benefit.',
-              '请为所选周年福利填写年费续期日期，或单独填写福利周年/重置日期。',
-            ),
-          );
+          throw new Error(t('accounts.anniversaryTemplateRequired'));
         const selections: TemplateSelection[] = templates.map((item) => ({
           template_version_id: item.template_version_id,
           ...(item.setup_field === 'first_qualifying_month'
@@ -254,24 +296,19 @@ export function AccountsPage() {
           staleCatalogAcknowledged: staleAcknowledged,
         });
         setMessage(
-          `${localize('Account created with', '账户已创建，包含')} ${created.benefits_created} ${localize('benefit(s)', '项福利')}${created.benefit_anniversary_inferred ? localize('. Benefit anniversary was inferred from the renewal date; verify the issuer boundary.', '。福利周年日期根据续期日期推断，请核对发卡行边界。') : '.'}`,
+          `${t('accounts.createdWithCount')
+            .replace('{count}', String(created.benefits_created))
+            .replace(
+              '{benefits}',
+              created.benefits_created === 1 ? t('accounts.benefit') : t('accounts.benefits'),
+            )}${created.benefit_anniversary_inferred ? ` ${t('accounts.createdAnniversaryInferred')}` : ''}`,
         );
       } else if (editing === 'new') {
         await createAccount(parsed);
-        setMessage(
-          localize(
-            'Custom account created. Add any standard or side benefit manually.',
-            '自定义账户已创建。你可以手动添加标准福利或其他福利。',
-          ),
-        );
+        setMessage(t('accounts.customCreated'));
       } else if (editing) {
         await updateAccount(editing.id, parsed);
-        setMessage(
-          localize(
-            'Account saved. Existing benefit history was not changed.',
-            '账户已保存，已有福利历史未改变。',
-          ),
-        );
+        setMessage(t('accounts.saved'));
       }
       setEditing(null);
       result.refresh();
@@ -289,15 +326,11 @@ export function AccountsPage() {
   }
 
   async function remove(account: Account) {
-    if (
-      !window.confirm(
-        `${localize('Delete', '删除')} ${account.display_name}? ${localize('Referenced accounts must be deactivated instead.', '已有引用的账户应改为停用。')}`,
-      )
-    )
+    if (!window.confirm(t('accounts.deletePrompt').replace('{account}', account.display_name)))
       return;
     try {
       await deleteAccount(account.id);
-      setMessage(localize('Account deleted.', '账户已删除。'));
+      setMessage(t('accounts.deleted'));
       result.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('accounts.deleteError'));
@@ -308,19 +341,16 @@ export function AccountsPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow={localize('Cards, services & portals', '信用卡、服务与账户')}
-        title={localize('Keep providers organized.', '让所有发卡方井然有序。')}
-        description={localize(
-          'Choose an exact U.S. card to preview standard benefits, or create a custom account. Never store a full card number, CVV, password, or banking credential.',
-          '选择准确的美国信用卡以预览标准福利，或创建自定义账户。不要保存完整卡号、CVV、密码或银行凭证。',
-        )}
+        eyebrow={t('accounts.eyebrow')}
+        title={t('accounts.pageTitle')}
+        description={t('accounts.pageDescription')}
         action={
           <div className="card-actions">
             <Link className="button button--secondary" to="/benefits/new">
-              {localize('+ Add custom benefit', '+ 添加自定义福利')}
+              {t('accounts.addCustomBenefit')}
             </Link>
             <button className="button button--primary" onClick={() => open('new')}>
-              {localize('+ Add account', '+ 添加账户')}
+              {t('accounts.addAccountPlus')}
             </button>
           </div>
         }
@@ -376,7 +406,7 @@ export function AccountsPage() {
                   <dt>{t('accounts.annualFee')}</dt>
                   <dd>
                     {account.annual_fee === null
-                      ? localize('Not set', '未设置')
+                      ? t('common.notSet')
                       : formatQuantity(account.annual_fee, {
                           valueKind: 'money',
                           currency: account.annual_fee_currency,
@@ -417,6 +447,7 @@ export function AccountsPage() {
       {editing && (
         <div className="modal-backdrop" role="presentation">
           <section
+            ref={dialogRef}
             className="modal modal--wide"
             role="dialog"
             aria-modal="true"
@@ -426,7 +457,7 @@ export function AccountsPage() {
               <div>
                 <p className="eyebrow">
                   {editing === 'new'
-                    ? `${localize('Step', '第')} ${step} ${localize('of 3', '步，共 3 步')}`
+                    ? t('common.stepOfThree').replace('{step}', String(step))
                     : t('accounts.edit')}
                 </p>
                 <h2 id="account-dialog-title">
@@ -446,12 +477,7 @@ export function AccountsPage() {
               <div className="form-stack">
                 <div>
                   <h3>{t('accounts.chooseCard')}</h3>
-                  <p className="muted">
-                    {localize(
-                      'This non-exhaustive catalog covers selected U.S. cards and card types. Issuer terms control; this is not financial advice. Authorized-user cards can duplicate benefits.',
-                      '此目录仅覆盖部分美国信用卡及卡种。以发卡行条款为准；这不是财务建议。授权用户卡可能重复计算福利。',
-                    )}
-                  </p>
+                  <p className="muted">{t('accounts.catalogNotice')}</p>
                 </div>
                 {catalog.error && (
                   <div className="alert alert--warning" role="status">
@@ -460,14 +486,11 @@ export function AccountsPage() {
                 )}
                 {!catalog.error && (
                   <label className="field">
-                    <span>{localize('Search issuer or card', '搜索发卡行或信用卡')}</span>
+                    <span>{t('accounts.searchIssuerCard')}</span>
                     <input
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
-                      placeholder={localize(
-                        'Chase Sapphire, Amex, Capital One…',
-                        'Chase Sapphire、Amex、Capital One…',
-                      )}
+                      placeholder={t('accounts.searchPlaceholder')}
                     />
                   </label>
                 )}
@@ -487,11 +510,10 @@ export function AccountsPage() {
                             {item.issuer} {item.product_name}
                           </strong>
                           <small>
-                            {item.templates.length} {localize('tracked benefit(s)', '项已追踪福利')}{' '}
-                            · {catalogTypeLabel(item.card_type, localize)} ·{' '}
-                            {catalogVerificationLabel(item.verification_state, localize)} ·{' '}
-                            {item.official_source_urls?.length ?? 1}{' '}
-                            {localize('official source(s)', '个官方来源')}
+                            {item.templates.length} {t('accounts.trackedBenefits')} ·{' '}
+                            {catalogTypeLabel(item.card_type, t)} ·{' '}
+                            {catalogVerificationLabel(item.verification_state, t)} ·{' '}
+                            {item.official_source_urls?.length ?? 1} {t('accounts.officialSources')}
                           </small>
                         </span>
                       </button>
@@ -507,15 +529,8 @@ export function AccountsPage() {
                       }}
                     >
                       <span>
-                        <strong>
-                          {localize('Custom card, service, or portal', '自定义信用卡、服务或账户')}
-                        </strong>
-                        <small>
-                          {localize(
-                            'Enter details yourself and add benefits manually.',
-                            '自行填写详情并手动添加福利。',
-                          )}
-                        </small>
+                        <strong>{t('accounts.customCard')}</strong>
+                        <small>{t('accounts.customEntryHelp')}</small>
                       </span>
                     </button>
                   </div>
@@ -556,7 +571,7 @@ export function AccountsPage() {
                       maxLength={120}
                       value={form.display_name}
                       onChange={(event) => setForm({ ...form, display_name: event.target.value })}
-                      placeholder={localize('Amex Platinum — Personal', 'Amex Platinum — 个人')}
+                      placeholder={t('accounts.displayNamePlaceholder')}
                     />
                   </label>
                   <label className="field">
@@ -621,7 +636,7 @@ export function AccountsPage() {
                     />
                   </label>
                   <label className="field">
-                    <span>{localize('Currency', '货币')}</span>
+                    <span>{t('accounts.currency')}</span>
                     <input
                       maxLength={3}
                       value={form.annual_fee_currency ?? ''}
@@ -651,12 +666,7 @@ export function AccountsPage() {
                           setAnniversaryDateSource(renewalDate ? 'renewal_date' : null);
                       }}
                     />
-                    <small>
-                      {localize(
-                        'Fee or membership renewal only—not a benefit reset.',
-                        '仅填写年费或会员续期日期，不是福利重置日期。',
-                      )}
-                    </small>
+                    <small>{t('accounts.renewalHelp')}</small>
                   </label>
                   <label className="field">
                     <span>{t('accounts.benefitAnniversary')}</span>
@@ -673,14 +683,8 @@ export function AccountsPage() {
                     />
                     <small>
                       {hasAnniversaryTemplate() && anniversaryDateSource === 'renewal_date'
-                        ? localize(
-                            'Auto-filled from the annual-fee renewal date. Verify the issuer benefit boundary; you can override it here.',
-                            '已根据年费续期日期自动填写。请核对发卡行福利边界，也可以在这里修改。',
-                          )
-                        : localize(
-                            'Used for selected anniversary benefits. Calendar-year benefits do not use this date.',
-                            '用于所选周年福利；自然年福利不使用此日期。',
-                          )}
+                        ? t('accounts.anniversaryAutoHelp')
+                        : t('accounts.anniversaryHelp')}
                     </small>
                   </label>
                   <label className="field field--wide">
@@ -727,10 +731,10 @@ export function AccountsPage() {
                   </button>
                   <button type="submit" className="button button--primary" disabled={busy}>
                     {editing === 'new' && product
-                      ? localize('Preview benefits', '预览福利')
+                      ? t('accounts.previewBenefits')
                       : busy
-                        ? localize('Saving…', '保存中…')
-                        : localize('Save account', '保存账户')}
+                        ? t('accounts.saving')
+                        : t('accounts.saveAccount')}
                   </button>
                 </div>
               </form>
@@ -739,21 +743,13 @@ export function AccountsPage() {
             {editing === 'new' && step === 3 && product && (
               <form onSubmit={(event) => void save(event)} className="form-stack">
                 <div>
-                  <h3>{localize('Choose benefits to create', '选择要创建的福利')}</h3>
-                  <p className="muted">
-                    {localize(
-                      'These become ordinary editable benefits. Catalog changes never overwrite them, and custom or side offers can be added later.',
-                      '这些会成为普通的可编辑福利。目录更新不会覆盖它们，之后也可以添加自定义或其他福利。',
-                    )}
-                  </p>
+                  <h3>{t('accounts.chooseBenefits')}</h3>
+                  <p className="muted">{t('accounts.chooseBenefitsHelp')}</p>
                 </div>
                 {product.age_days > 90 && (
                   <div className="alert alert--warning">
-                    {localize('Catalog facts are', '目录信息已有')} {product.age_days}{' '}
-                    {localize(
-                      'days old. Verify current issuer terms.',
-                      '天，请核对发卡行当前条款。',
-                    )}
+                    {t('accounts.catalogAgePrefix')} {product.age_days}{' '}
+                    {t('accounts.catalogAgeSuffix')}
                   </div>
                 )}
                 <div className="template-list">
@@ -778,37 +774,37 @@ export function AccountsPage() {
                         </span>
                       </label>
                       <div className="template-meta">
-                        <span>{dateStrategyLabel(item.date_strategy, localize)}</span>
+                        <span>{dateStrategyLabel(item.date_strategy, t)}</span>
                         <span>
-                          {localize('Next', '下一个周期')}:{' '}
+                          {t('accounts.next')}:{' '}
                           {periodPreview(
                             item,
                             form.benefit_anniversary_date,
                             setupMonths[item.template_version_id],
-                            localize,
                             formatRecurrenceType,
                             locale,
+                            t,
                           )}
                         </span>
                         <span>
                           {item.payload.enrollment_required
-                            ? localize('Enrollment required', '需要注册')
-                            : localize('No enrollment marker', '无需注册标记')}
+                            ? t('instance.required')
+                            : t('accounts.noEnrollmentMarker')}
                         </span>
                         {item.fixed_end && (
                           <span>
-                            {localize('Ends', '到期')} {formatDate(item.fixed_end, locale)}
+                            {t('dashboard.ends')} {formatDate(item.fixed_end, locale)}
                           </span>
                         )}
                         <span>
-                          {catalogVerificationLabel(item.verification_state, localize)} ·{' '}
-                          {item.official_source_urls?.length ?? 1} {localize('source(s)', '个来源')}
+                          {catalogVerificationLabel(item.verification_state, t)} ·{' '}
+                          {item.official_source_urls?.length ?? 1} {t('accounts.sources')}
                         </span>
                       </div>
                       {item.setup_field === 'first_qualifying_month' &&
                         selected.has(item.template_version_id) && (
                           <label className="field">
-                            <span>{localize('First qualifying month', '首个合格月份')}</span>
+                            <span>{t('accounts.firstQualifyingMonth')}</span>
                             <input
                               required
                               type="month"
@@ -820,12 +816,7 @@ export function AccountsPage() {
                                 })
                               }
                             />
-                            <small>
-                              {localize(
-                                'Creates an Upcoming estimate after 11 qualifying months. Reminders remain off.',
-                                '完成 11 个合格月份后会创建“即将开始”的预计周期，提醒仍保持关闭。',
-                              )}
-                            </small>
+                            <small>{t('accounts.firstQualifyingMonthHelp')}</small>
                           </label>
                         )}
                       <p className="muted">
@@ -839,20 +830,15 @@ export function AccountsPage() {
                         rel="noopener noreferrer"
                       >
                         {item.verification_state === 'verified'
-                          ? localize('Issuer source · verified', '发卡行来源 · 已核验')
-                          : localize('Issuer source · review status', '发卡行来源 · 核验状态')}{' '}
-                        {catalogVerificationLabel(item.verification_state, localize)} ·{' '}
+                          ? t('accounts.issuerSourceVerified')
+                          : t('accounts.issuerSourceReview')}{' '}
+                        {catalogVerificationLabel(item.verification_state, t)} ·{' '}
                         {formatDate(item.verified_on, locale)}
                       </a>
                     </article>
                   ))}
                 </div>
-                <p className="muted">
-                  {localize(
-                    'Benefits can depend on opening date, authorized-user status, targeting, enrollment, and issuer changes. Confirm every term with the issuer.',
-                    '福利可能取决于开户日期、授权用户身份、定向资格、注册状态和发卡行调整。请向发卡行确认每项条款。',
-                  )}
-                </p>
+                <p className="muted">{t('accounts.termsReminder')}</p>
                 {product.age_days > 180 && (
                   <label className="check-field">
                     <input
@@ -861,15 +847,8 @@ export function AccountsPage() {
                       onChange={(event) => setStaleAcknowledged(event.target.checked)}
                     />
                     <span>
-                      <strong>
-                        {localize('I reviewed current issuer terms', '我已核对发卡行当前条款')}
-                      </strong>
-                      <small>
-                        {localize(
-                          'Required because this catalog version is over 180 days old.',
-                          '由于此目录版本超过 180 天，这是必填确认项。',
-                        )}
-                      </small>
+                      <strong>{t('accounts.reviewedTerms')}</strong>
+                      <small>{t('accounts.staleCatalogHelp')}</small>
                     </span>
                   </label>
                 )}
@@ -884,7 +863,7 @@ export function AccountsPage() {
                     className="button button--secondary"
                     onClick={() => setStep(2)}
                   >
-                    {localize('Back', '返回')}
+                    {t('accounts.back')}
                   </button>
                   <button
                     type="submit"
@@ -892,11 +871,9 @@ export function AccountsPage() {
                     disabled={busy || (product.age_days > 180 && !staleAcknowledged)}
                   >
                     {busy
-                      ? localize('Creating…', '创建中…')
-                      : `${localize('Create account and', '创建账户并添加')} ${selected.size} ${
-                          selected.size === 1
-                            ? localize('benefit', '项福利')
-                            : localize('benefits', '项福利')
+                      ? t('accounts.saving')
+                      : `${t('accounts.createAccountAnd')} ${selected.size} ${
+                          selected.size === 1 ? t('accounts.benefit') : t('accounts.benefits')
                         }`}
                   </button>
                 </div>

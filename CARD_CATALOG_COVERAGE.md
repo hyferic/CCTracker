@@ -34,7 +34,38 @@ future imports.
 
 The authenticated views `public.card_catalog_coverage` and
 `public.card_catalog_quality` expose the same evidence to the application.
-Their `coverage_basis` states that counts are installed rows only.
+Their `coverage_basis` states that counts are installed rows only, and
+`card_catalog_coverage.current_products` retains a deterministic JSON inventory
+of each installed product's stable key, type, source URLs, verification state,
+verification date, effective range, normalized metadata, and structured hash.
+
+## Installed product inventory
+
+The following is the complete list of product rows installed by the versioned
+catalog migrations. It is an inventory of repository data, not a complete list
+of products offered by any issuer. The legacy `official_url` is retained for
+compatibility; the normalized `official_product_url` is intentionally blank
+when the repository only has a benefits-page URL.
+
+| Issuer | Product (`stable_key`) | Card type | `verified_on` | Official source |
+| --- | --- | --- | --- | --- |
+| American Express | Platinum Card (`amex-platinum-us-consumer`) | consumer | 2026-08-25 | [benefits page](https://global.americanexpress.com/card-benefits/view-all/platinum) |
+| American Express | Gold Card (`amex-gold-us-consumer`) | consumer | 2026-08-25 | [benefits page](https://global.americanexpress.com/card-benefits/view-all/gold) |
+| American Express | Blue Cash Preferred (`amex-blue-cash-preferred`) | consumer | 2026-08-25 | [product page](https://www.americanexpress.com/us/credit-cards/card/blue-cash-preferred/) |
+| American Express | Hilton Honors Aspire (`hilton-honors-aspire`) | co_branded | 2026-08-25 | [product page](https://www.americanexpress.com/us/credit-cards/card/hilton-honors-aspire/) |
+| American Express | Marriott Bonvoy Brilliant (`marriott-bonvoy-brilliant`) | co_branded | 2026-08-25 | [product page](https://www.marriott.com/credit-cards/marriott-bonvoy-brilliant-american-express-card.mi) |
+| American Express | Delta SkyMiles Reserve (`delta-skymiles-reserve`) | co_branded | 2026-08-25 | [product page](https://www.americanexpress.com/us/credit-cards/card/delta-skymiles-reserve-american-express-card/) |
+| Chase | Sapphire Reserve (`chase-sapphire-reserve`) | consumer | 2026-08-25 | [product page](https://creditcards.chase.com/rewards-credit-cards/sapphire/reserve) |
+| Chase | Sapphire Preferred (`chase-sapphire-preferred`) | consumer | 2026-08-25 | [product page](https://creditcards.chase.com/rewards-credit-cards/sapphire/preferred) |
+| Chase | United Explorer (`united-explorer`) | co_branded | 2026-08-25 | [product page](https://www.chase.com/personal/credit-cards/united/united-explorer-card) |
+| Chase | Southwest Rapid Rewards Priority (`southwest-rapid-rewards-priority`) | co_branded | 2026-08-25 | [product page](https://creditcards.chase.com/travel-credit-cards/southwest/priority) |
+| Capital One | Venture X (`capital-one-venture-x`) | consumer | 2026-08-25 | [product page](https://www.capitalone.com/credit-cards/venture-x/) |
+| U.S. Bank | Altitude Go (`us-bank-altitude-go`) | consumer | 2026-08-25 | [product page](https://www.usbank.com/credit-cards/altitude-go-visa-signature-credit-card.html) |
+| U.S. Bank | Shield (`us-bank-shield`) | consumer | 2026-08-25 | [product page](https://www.usbank.com/credit-cards/shield-visa-credit-card.html) |
+| Bank of America | Premium Rewards (`bofa-premium-rewards`) | consumer | 2026-08-25 | [product page](https://www.bankofamerica.com/credit-cards/products/premium-rewards-credit-card/) |
+| Bank of America | Premium Rewards Elite (`bofa-premium-rewards-elite`) | consumer | 2026-08-25 | [product page](https://www.bankofamerica.com/credit-cards/products/premium-rewards-elite-credit-card/) |
+| Citi | Strata Elite (`citi-strata-elite`) | consumer | 2026-08-25 | [product page](https://www.citi.com/credit-cards/citi-strata-elite-credit-card) |
+| Citi | Strata Premier (`citi-strata-premier`) | consumer | 2026-08-25 | [product page](https://www.citi.com/credit-cards/citi-strata-premier-credit-card) |
 
 ## Source review log
 

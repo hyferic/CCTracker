@@ -16,7 +16,7 @@ import type { BenefitInstance } from '../types';
 import { recurrenceLabel, useI18n } from '../features/i18n/I18nContext';
 
 export function BenefitsPage() {
-  const { language, localize, t } = useI18n();
+  const { language, t } = useI18n();
   const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US';
   const location = useLocation();
   const result = useAsync(async () => {
@@ -135,19 +135,19 @@ export function BenefitsPage() {
                         ? recurrenceLabel(
                             definition.recurrence_type,
                             definition.recurrence_basis,
-                            localize,
+                            t,
                           )
-                        : localize('One-time', '一次性')}{' '}
-                      · {localize('revision', '版本')} {definition.current_revision_no}
+                        : t('benefits.oneTime')}{' '}
+                      · {t('benefits.revision')} {definition.current_revision_no}
                     </p>
                     {definition.origin_template_version_id && (
                       <p className="muted">
-                        {localize('Standard catalog template', '标准目录模板')} v
+                        {t('benefits.standardCatalogTemplate')} v
                         {definition.origin_template_version}
                         {definition.customized_at
-                          ? localize(' · customized', ' · 已自定义')
-                          : localize(' · unchanged', ' · 未修改')}{' '}
-                        · {localize('terms zone', '条款时区')} {definition.terms_timezone}
+                          ? t('benefits.customized')
+                          : t('benefits.unchanged')}{' '}
+                        · {t('benefits.termsZone')} {definition.terms_timezone}
                       </p>
                     )}
                     {definition.description && <p>{definition.description}</p>}
@@ -164,7 +164,7 @@ export function BenefitsPage() {
                             unitLabel: current.unit_label,
                             locale,
                           })
-                        : localize('No period', '暂无周期')}
+                        : t('benefits.noPeriod')}
                     </dd>
                   </div>
                   <div>
@@ -178,9 +178,9 @@ export function BenefitsPage() {
                   <div>
                     <dt>{t('benefits.history')}</dt>
                     <dd>
-                      {livePeriods.length} {localize('live period', '个有效周期')}
+                      {livePeriods.length} {t('benefits.livePeriod')}
                       {auditVersions.length
-                        ? ` · ${auditVersions.length} ${localize('audit version', '个审计版本')}`
+                        ? ` · ${auditVersions.length} ${t('benefits.auditVersionCount')}`
                         : ''}
                     </dd>
                   </div>
@@ -238,16 +238,15 @@ export function BenefitsPage() {
                         )
                         .map((instance: BenefitInstance) => {
                           const versionLabel = instance.is_audit_version
-                            ? `${localize('Void audit · version', '已作废审计 · 版本')} ${instance.instance_version}`
+                            ? `${t('benefits.voidAuditVersion')} ${instance.instance_version}`
                             : instance.supersedes_instance_id
-                              ? `${localize('Live · version', '有效 · 版本')} ${instance.instance_version} · ${localize('supersedes prior', '替代之前版本')}`
-                              : localize(
-                                  instance.usage_status,
+                              ? `${t('benefits.liveVersionSupersedes')} ${instance.instance_version} · ${t('benefits.supersedesPrior')}`
+                              : t(
                                   instance.usage_status === 'used'
-                                    ? '已使用'
+                                    ? 'status.used'
                                     : instance.usage_status === 'partial'
-                                      ? '部分使用'
-                                      : '未使用',
+                                      ? 'status.partial'
+                                      : 'status.unused',
                                 );
                           const versionTone = instance.is_audit_version
                             ? 'danger'
@@ -263,7 +262,7 @@ export function BenefitsPage() {
                               <span>
                                 {instance.period_label}
                                 {instance.superseded_by_instance_id
-                                  ? localize(' · superseded by replacement', ' · 已由替代版本接替')
+                                  ? t('benefits.supersededReplacement')
                                   : ''}
                               </span>
                               <span>
@@ -273,7 +272,7 @@ export function BenefitsPage() {
                                   unitLabel: instance.unit_label,
                                   locale,
                                 })}{' '}
-                                {localize('remaining', '剩余')}
+                                {t('common.remaining')}
                               </span>
                               <span className={`mini-status mini-status--${versionTone}`}>
                                 {versionLabel}

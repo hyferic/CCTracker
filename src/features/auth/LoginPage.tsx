@@ -5,7 +5,7 @@ import { useI18n } from '../i18n/I18nContext';
 
 export function LoginPage() {
   const auth = useAuth();
-  const { t, localize } = useI18n();
+  const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -41,11 +41,7 @@ export function LoginPage() {
   return (
     <main className="auth-page" data-testid="auth-screen">
       <section className="auth-brand" aria-label={t('login.introduction')}>
-        <a
-          className="brand brand--light"
-          href="#/"
-          aria-label={localize('PerkLedger home', 'PerkLedger 首页')}
-        >
+        <a className="brand brand--light" href="#/" aria-label={t('login.homeAria')}>
           <span className="brand-mark" aria-hidden="true">
             P
           </span>
@@ -85,10 +81,7 @@ export function LoginPage() {
               <p className="eyebrow">{t('login.setupNeeded')}</p>
               <h2>{t('login.connectDatabase')}</h2>
               <div className="alert alert--warning" role="alert">
-                {localize(
-                  'This deployment is not connected to Supabase. Add the browser-safe project URL and publishable key.',
-                  '此部署尚未连接 Supabase。请添加浏览器安全的项目 URL 和 publishable key。',
-                )}
+                {t('login.configurationError')}
               </div>
               <p className="muted">{t('login.deploymentHelp')}</p>
             </>
@@ -131,7 +124,7 @@ export function LoginPage() {
                     autoComplete="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder={localize('you@example.com', 'you@example.com')}
+                    placeholder={t('login.emailPlaceholder')}
                   />
                 </label>
                 {error && (

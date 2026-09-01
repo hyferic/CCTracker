@@ -165,6 +165,210 @@ select is((select instance_version from public.benefit_instance_dashboard
   where definition_id = (select value from test_context where key = 'editable_one_time')
     and lifecycle_status <> 'void'), 2, 'first-occurrence edit creates a versioned live replacement');
 
+insert into test_context(key, value)
+select 'editable_one_time_instance', i.id
+from public.benefit_instances i
+where i.definition_id = (select value from test_context where key = 'editable_one_time')
+  and i.voided_at is null
+limit 1;
+select lives_ok(format(
+  'select public.record_redemption(%L::uuid, 2, current_date, null, null, %L)',
+  (select value from test_context where key = 'editable_one_time_instance'),
+  'Pre-existing usage'
+), 'one-time history can contain usage before a full confirmation');
+insert into test_context(key, value)
+select 'editable_one_time_redemption', r.id
+from public.redemptions r
+where r.benefit_instance_id = (select value from test_context where key = 'editable_one_time_instance')
+  and r.notes = 'Pre-existing usage';
+select lives_ok(format(
+  'select public.confirm_benefit_period_used(%L::uuid, current_date, %L)',
+  (select value from test_context where key = 'editable_one_time_instance'),
+  'Confirmed in lifecycle test'
+), 'one-time confirmation records full usage and archives the live period');
+select ok((select voided_at is not null from public.benefit_instances
+  where id = (select value from test_context where key = 'editable_one_time_instance')),
+  'one-time confirmation preserves the archive marker');
+select is((select usage_status from public.benefit_instance_dashboard
+  where instance_id = (select value from test_context where key = 'editable_one_time_instance')),
+  'used', 'one-time confirmation removes the period from outstanding usage');
+
+insert into test_context(key, value)
+select 'editable_one_time_confirmation_redemption', r.id
+from public.redemptions r
+where r.benefit_instance_id = (select value from test_context where key = 'editable_one_time_instance')
+  and r.notes = 'Confirmed in lifecycle test';
+insert into test_context(key, value)
+select 'editable_one_time_confirmation_marker', i.confirmation_redemption_id
+from public.benefit_instances i
+where i.id = (select value from test_context where key = 'editable_one_time_instance');
+select throws_ok(format(
+  'select public.delete_redemption(%L::uuid)',
+  (select value from test_context where key = 'editable_one_time_confirmation_marker')
+), '55000', 'confirmation usage record must be reopened through the correction action',
+  'archived confirmation redemption cannot be deleted directly');
+select lives_ok(format(
+  'select public.reopen_confirmed_benefit_period(%L::uuid, %L::uuid)',
+  (select value from test_context where key = 'editable_one_time_instance'),
+  (select value from test_context where key = 'editable_one_time_confirmation_marker')
+), 'an explicit correction reopens the archived one-time confirmation');
+select is((select voided_at from public.benefit_instances
+  where id = (select value from test_context where key = 'editable_one_time_instance')),
+  null::timestamptz, 'explicit correction restores a live one-time period');
+select is((select count(*) from public.redemptions
+  where benefit_instance_id = (select value from test_context where key = 'editable_one_time_instance')),
+  1::bigint, 'explicit correction removes only the confirmation redemption');
+select throws_ok(format(
+  'select public.override_instance(%L::uuid, %L::jsonb, %L)',
+  (select value from test_context where key = 'editable_one_time_instance'),
+  '{"period_label":"must not override used one-time"}', 'Test override'
+), '55000', 'used one-time period cannot be overridden; correct the redemption instead',
+  'used one-time periods cannot enter the override path');
+select lives_ok(format(
+  'select public.delete_redemption(%L::uuid)',
+  (select value from test_context where key = 'editable_one_time_redemption')
+), 'reopened one-time confirmation can be corrected by removing its redemption');
+select is((select usage_status from public.benefit_instance_dashboard
+  where instance_id = (select value from test_context where key = 'editable_one_time_instance')),
+  'unused', 'correcting the one-time redemption restores the outstanding period');
+
+with created as (
+  select public.create_benefit(jsonb_build_object(
+    'name', 'pgTAP legacy bounded confirmation', 'category', 'Testing',
+    'value_kind', 'money', 'benefit_amount', 100, 'currency', 'USD',
+    'effective_date', current_date, 'end_date', current_date + 5,
+    'recurrence_type', 'one_time', 'recurrence_basis', 'none'
+  )) as result
+)
+insert into test_context(key, value)
+select 'legacy_bounded_definition', (result->>'definition_id')::uuid from created;
+insert into test_context(key, value)
+select 'legacy_bounded_instance', i.id
+from public.benefit_instances i
+where i.definition_id = (select value from test_context where key = 'legacy_bounded_definition')
+  and i.voided_at is null;
+select lives_ok(format(
+  'select public.record_redemption(%L::uuid, 40, current_date, null, null, %L)',
+  (select value from test_context where key = 'legacy_bounded_instance'),
+  'Pre-existing legacy usage'
+), 'legacy correction fixture keeps pre-existing finite usage');
+select lives_ok(format(
+  'select public.confirm_benefit_period_used(%L::uuid, current_date, %L)',
+  (select value from test_context where key = 'legacy_bounded_instance'),
+  'Confirmed used from dashboard.'
+), 'legacy-shaped bounded confirmation is archived');
+reset role;
+select lives_ok(format($sql$
+  select set_config('app.lifecycle_write', 'on', true);
+  update public.benefit_instances
+  set confirmation_redemption_id = null
+  where id = %L::uuid;
+$sql$, (select value from test_context where key = 'legacy_bounded_instance')),
+  'legacy fixture removes the post-migration marker without changing its history');
+set local role authenticated;
+select lives_ok(format(
+  'select public.reopen_confirmed_benefit_period(%L::uuid)',
+  (select value from test_context where key = 'legacy_bounded_instance')
+), 'legacy bounded confirmation reopens through its unambiguous dashboard redemption');
+select is((select count(*) from public.redemptions
+  where benefit_instance_id = (select value from test_context where key = 'legacy_bounded_instance')),
+  1::bigint, 'legacy correction removes only the dashboard redemption');
+select is((select sum(redeemed_quantity) from public.redemptions
+  where benefit_instance_id = (select value from test_context where key = 'legacy_bounded_instance')),
+  40::numeric, 'legacy correction preserves pre-existing finite usage');
+
+with created as (
+  select public.create_benefit(jsonb_build_object(
+    'name', 'pgTAP ambiguous legacy confirmation', 'category', 'Testing',
+    'value_kind', 'money', 'benefit_amount', 100, 'currency', 'USD',
+    'effective_date', current_date, 'end_date', current_date + 5,
+    'recurrence_type', 'one_time', 'recurrence_basis', 'none'
+  )) as result
+)
+insert into test_context(key, value)
+select 'ambiguous_bounded_definition', (result->>'definition_id')::uuid from created;
+insert into test_context(key, value)
+select 'ambiguous_bounded_instance', i.id
+from public.benefit_instances i
+where i.definition_id = (select value from test_context where key = 'ambiguous_bounded_definition')
+  and i.voided_at is null;
+select lives_ok(format(
+  'select public.record_redemption(%L::uuid, 50, current_date, null, null, %L)',
+  (select value from test_context where key = 'ambiguous_bounded_instance'),
+  'Confirmed used from dashboard.'
+), 'ambiguous legacy fixture records its first matching-note row');
+select lives_ok(format(
+  'select public.record_redemption(%L::uuid, 50, current_date, null, null, %L)',
+  (select value from test_context where key = 'ambiguous_bounded_instance'),
+  'Confirmed used from dashboard.'
+), 'ambiguous legacy fixture records its second matching-note row');
+reset role;
+select lives_ok(format($sql$
+  select set_config('app.lifecycle_write', 'on', true);
+  update public.benefit_instances
+  set voided_at = statement_timestamp(),
+      void_reason = 'Confirmed used; archived from dashboard',
+      confirmation_redemption_id = null
+  where id = %L::uuid;
+$sql$, (select value from test_context where key = 'ambiguous_bounded_instance')),
+  'ambiguous legacy fixture is archived without a marker');
+set local role authenticated;
+select throws_ok(format(
+  'select public.reopen_confirmed_benefit_period(%L::uuid)',
+  (select value from test_context where key = 'ambiguous_bounded_instance')
+), '55000', 'confirmation usage record is not available for correction',
+  'ambiguous legacy matching rows fail closed without deletion');
+select is((select count(*) from public.redemptions
+  where benefit_instance_id = (select value from test_context where key = 'ambiguous_bounded_instance')),
+  2::bigint, 'unsafe legacy correction leaves both ambiguous rows intact');
+
+with created as (
+  select public.create_benefit(jsonb_build_object(
+    'name', 'pgTAP uncapped one-time confirmation', 'category', 'Testing',
+    'value_kind', 'percentage_cashback', 'cashback_percentage', 10,
+    'currency', 'USD', 'effective_date', current_date,
+    'end_date', current_date + 5,
+    'recurrence_type', 'one_time', 'recurrence_basis', 'none'
+  )) as result
+)
+insert into test_context(key, value)
+select 'uncapped_one_time_definition', (result->>'definition_id')::uuid from created;
+insert into test_context(key, value)
+select 'uncapped_one_time_instance', i.id
+from public.benefit_instances i
+where i.definition_id = (select value from test_context where key = 'uncapped_one_time_definition')
+  and i.voided_at is null;
+select lives_ok(format(
+  'select public.record_redemption(%L::uuid, 5, current_date, null, null, %L)',
+  (select value from test_context where key = 'uncapped_one_time_instance'),
+  'Pre-existing uncapped usage'
+), 'uncapped one-time history preserves usage before dashboard confirmation');
+select lives_ok(format(
+  'select public.confirm_benefit_period_used(%L::uuid, current_date, %L)',
+  (select value from test_context where key = 'uncapped_one_time_instance'),
+  'Confirmed uncapped one-time in lifecycle test'
+), 'uncapped one-time confirmation records completion and archives the live period');
+select ok((select confirmation_manual_completion
+  from public.benefit_instances
+  where id = (select value from test_context where key = 'uncapped_one_time_instance')),
+  'uncapped confirmation records that it created the manual completion state');
+select is((select usage_status from public.benefit_instance_dashboard
+  where instance_id = (select value from test_context where key = 'uncapped_one_time_instance')),
+  'used', 'uncapped one-time confirmation removes the period from outstanding usage');
+select lives_ok(format(
+  'select public.reopen_confirmed_benefit_period(%L::uuid)',
+  (select value from test_context where key = 'uncapped_one_time_instance')
+), 'uncapped one-time confirmation can be reopened without a synthetic redemption');
+select is((select manual_completed_at from public.benefit_instances
+  where id = (select value from test_context where key = 'uncapped_one_time_instance')),
+  null::timestamptz, 'reopening clears only the completion created by dashboard confirmation');
+select is((select manual_completion_note from public.benefit_instances
+  where id = (select value from test_context where key = 'uncapped_one_time_instance')),
+  null::text, 'reopening clears the dashboard completion note');
+select is((select usage_status from public.benefit_instance_dashboard
+  where instance_id = (select value from test_context where key = 'uncapped_one_time_instance')),
+  'partial', 'reopening restores the pre-existing uncapped partial usage state');
+
 with created as (
   select public.create_benefit(jsonb_build_object(
     'name', 'pgTAP editable current monthly occurrence', 'category', 'Testing',

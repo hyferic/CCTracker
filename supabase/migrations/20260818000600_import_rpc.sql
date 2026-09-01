@@ -71,13 +71,15 @@ begin
   perform 'PRAGMA:TABLE: pg_temp.import_account_map(old_id text, new_id uuid, skipped boolean)';
   perform 'PRAGMA:TABLE: pg_temp.import_definition_map(old_id text, new_id uuid, skipped boolean)';
   perform 'PRAGMA:TABLE: pg_temp.import_revision_map(old_id text, new_id uuid)';
-  perform 'PRAGMA:TABLE: pg_temp.import_instance_map(old_id text, new_id uuid, old_supersedes_id text)';
+  perform 'PRAGMA:TABLE: pg_temp.import_instance_map(old_id text, new_id uuid, old_supersedes_id text, old_confirmation_redemption_id text)';
+  perform 'PRAGMA:TABLE: pg_temp.import_redemption_map(old_id text, new_id uuid, old_instance_id text)';
   perform 'PRAGMA:TABLE: pg_temp.import_skipped_instances(old_id text)';
 
   drop table if exists pg_temp.import_account_map;
   drop table if exists pg_temp.import_definition_map;
   drop table if exists pg_temp.import_revision_map;
   drop table if exists pg_temp.import_instance_map;
+  drop table if exists pg_temp.import_redemption_map;
   drop table if exists pg_temp.import_skipped_instances;
 
   create temporary table pg_temp.import_account_map (
@@ -97,7 +99,13 @@ begin
   create temporary table pg_temp.import_instance_map (
     old_id text primary key,
     new_id uuid not null,
-    old_supersedes_id text
+    old_supersedes_id text,
+    old_confirmation_redemption_id text
+  ) on commit drop;
+  create temporary table pg_temp.import_redemption_map (
+    old_id text primary key,
+    new_id uuid not null,
+    old_instance_id text not null
   ) on commit drop;
   create temporary table pg_temp.import_skipped_instances (
     old_id text primary key
@@ -309,7 +317,8 @@ begin
       recurrence_sequence, nominal_start, nominal_end, period_start, period_end,
       value_kind, available_quantity, is_uncapped, currency, unit_label, period_label,
       generated_source, reactivation_eligible, expiration_notification_suppressed,
-      manual_completed_at, manual_completion_note, voided_at, void_reason
+      manual_completed_at, manual_completion_note, confirmation_redemption_id,
+      confirmation_manual_completion, voided_at, void_reason
     ) values (
       v_definition_id, v_revision_id, v_user_id, v_item->>'occurrence_key',
       coalesce(nullif(v_item->>'instance_version', '')::integer, 1),
@@ -323,12 +332,15 @@ begin
       p_current_notification_policy = 'suppress_current',
       case when nullif(v_item->>'manual_completed_at', '') is null then null else statement_timestamp() end,
       nullif(v_item->>'manual_completion_note', ''),
+      null,
+      coalesce((v_item->>'confirmation_manual_completion')::boolean, false),
       case when nullif(v_item->>'voided_at', '') is null then null else statement_timestamp() end,
       case when nullif(v_item->>'voided_at', '') is null then null
         else coalesce(nullif(v_item->>'void_reason', ''), 'Restored void audit version') end
     ) returning id into v_instance_id;
     insert into pg_temp.import_instance_map values (
-      v_item->>'id', v_instance_id, nullif(v_item->>'supersedes_instance_id', '')
+      v_item->>'id', v_instance_id, nullif(v_item->>'supersedes_instance_id', ''),
+      nullif(v_item->>'confirmation_redemption_id', '')
     );
     v_instances := v_instances + 1;
   end loop;
@@ -396,8 +408,33 @@ begin
       v_instance_id, v_user_id, (v_item->>'redeemed_quantity')::numeric,
       (v_item->>'used_date')::date, nullif(v_item->>'merchant', ''),
       nullif(v_item->>'transaction_description', ''), nullif(v_item->>'notes', '')
-    );
+    ) returning id into v_new_id;
+    if nullif(v_item->>'id', '') is not null then
+      insert into pg_temp.import_redemption_map(old_id, new_id, old_instance_id)
+      values (v_item->>'id', v_new_id, v_item->>'benefit_instance_id');
+    end if;
     v_redemptions := v_redemptions + 1;
+  end loop;
+
+  -- Confirmation IDs refer to source redemption IDs, so resolve them only
+  -- after all destination redemptions exist and require the source instance
+  -- relationship to match. Missing or cross-instance references fail closed.
+  for v_map in
+    select m.old_id, m.new_id, m.old_confirmation_redemption_id
+    from pg_temp.import_instance_map m
+    where m.old_confirmation_redemption_id is not null
+  loop
+    select r.new_id into v_new_id
+    from pg_temp.import_redemption_map r
+    where r.old_id = v_map.old_confirmation_redemption_id
+      and r.old_instance_id = v_map.old_id;
+    if not found then
+      raise exception 'confirmation redemption references an unknown or mismatched redemption'
+        using errcode = '23503';
+    end if;
+    update public.benefit_instances i
+    set confirmation_redemption_id = v_new_id
+    where i.id = v_map.new_id;
   end loop;
 
   set constraints all immediate;

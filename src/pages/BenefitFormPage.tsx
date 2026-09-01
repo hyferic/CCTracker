@@ -111,7 +111,7 @@ export function BenefitFormPage() {
   const { definitionId } = useParams();
   const navigate = useNavigate();
   const { today, timezone } = useBusinessDate();
-  const { language, localize } = useI18n();
+  const { language, t } = useI18n();
   const data = useAsync(async () => {
     const [accounts, definitions] = await Promise.all([listAccounts(false), listDefinitions()]);
     return { accounts, definition: definitions.find((item) => item.id === definitionId) ?? null };
@@ -188,12 +188,7 @@ export function BenefitFormPage() {
       return;
     }
     if (!definitionId && backfillMonths > 0 && !confirmedBackfill) {
-      setError(
-        localize(
-          'Confirm that you want to create historical periods. Backfill never sends reactivation emails.',
-          '请确认要创建历史周期。补录周期不会发送重新可用提醒。',
-        ),
-      );
+      setError(t('benefitForm.confirmBackfillError'));
       return;
     }
     setBusy(true);
@@ -202,10 +197,7 @@ export function BenefitFormPage() {
         await editBenefit(definitionId, parsed.data, editScope, effectiveBoundary);
         void navigate('/benefits', {
           state: {
-            message: localize(
-              'Benefit revision saved. Historical periods were preserved.',
-              '福利修订已保存，历史周期已保留。',
-            ),
+            message: t('benefitForm.revisionSaved'),
           },
         });
       } else {
@@ -216,20 +208,13 @@ export function BenefitFormPage() {
             state: created.current_instance_id
               ? undefined
               : {
-                  message: localize(
-                    'Benefit created. Its first period is upcoming.',
-                    '福利已创建，第一个周期即将开始。',
-                  ),
+                  message: t('benefitForm.createdUpcoming'),
                 },
           },
         );
       }
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : localize('Could not save the benefit.', '无法保存福利。'),
-      );
+      setError(caught instanceof Error ? caught.message : t('benefitForm.saveError'));
     } finally {
       setBusy(false);
     }
@@ -242,39 +227,21 @@ export function BenefitFormPage() {
   )
     return <SkeletonRows count={5} />;
   if (definitionId && !data.data?.definition)
-    return (
-      <ErrorState
-        error={
-          new Error(
-            localize(
-              'This benefit was not found or you no longer have access.',
-              '找不到此福利，或你已无权访问。',
-            ),
-          )
-        }
-      />
-    );
+    return <ErrorState error={new Error(t('benefitForm.notFound'))} />;
 
   return (
     <form className="benefit-form page-stack" onSubmit={(event) => void submit(event)}>
       <PageHeader
-        eyebrow={
-          definitionId
-            ? localize('Revision-aware edit', '修订式编辑')
-            : localize('New benefit', '新福利')
-        }
+        eyebrow={definitionId ? t('benefitForm.revisionAwareEdit') : t('benefitForm.newBenefit')}
         title={
           definitionId
-            ? `${localize('Edit', '编辑')} ${data.data?.definition?.name}`
-            : localize('What benefit are you tracking?', '你要追踪什么福利？')
+            ? `${t('common.edit')} ${data.data?.definition?.name}`
+            : t('benefitForm.whatTracking')
         }
-        description={localize(
-          'Use date-only periods. PerkLedger applies your selected IANA timezone instead of the browser timezone.',
-          '使用仅日期的周期。PerkLedger 会使用你选择的 IANA 时区，而不是浏览器时区。',
-        )}
+        description={t('benefitForm.description')}
         action={
           <Link className="button button--secondary" to={definitionId ? '/benefits' : '/dashboard'}>
-            {localize('Cancel', '取消')}
+            {t('benefitForm.cancel')}
           </Link>
         }
       />
@@ -284,31 +251,21 @@ export function BenefitFormPage() {
           <div className="form-section-title">
             <span>1</span>
             <div>
-              <h2>{localize('Apply this change', '应用此更改')}</h2>
-              <p>{localize('Historical periods are never rewritten.', '历史周期不会被改写。')}</p>
+              <h2>{t('benefitForm.applyChange')}</h2>
+              <p>{t('benefitForm.historicalPeriods')}</p>
             </div>
           </div>
           {data.data?.definition?.origin_template_version_id && (
             <div className="info-box">
-              <strong>
-                {localize('Created from the standard card catalog', '根据标准信用卡目录创建')}
-              </strong>
+              <strong>{t('benefitForm.catalogCreated')}</strong>
               <p>
-                {localize('Template', '模板')} {data.data.definition.origin_template_stable_key}{' '}
-                {localize('version', '版本')} {data.data.definition.origin_template_version} ·{' '}
-                {localize('verified', '验证于')}{' '}
-                {data.data.definition.origin_verified_on ??
-                  localize('date unavailable', '日期不可用')}
-                .
+                {t('benefitForm.template')} {data.data.definition.origin_template_stable_key}{' '}
+                {t('common.version')} {data.data.definition.origin_template_version} ·{' '}
+                {t('benefitForm.verifiedOn')}{' '}
+                {data.data.definition.origin_verified_on ?? t('benefitForm.dateUnavailable')}.
                 {data.data.definition.customized_at
-                  ? localize(
-                      ' This benefit has been customized; its catalog sibling benefits are unaffected.',
-                      ' 此福利已自定义；目录中的同卡福利不受影响。',
-                    )
-                  : localize(
-                      ' Editing creates your own revision and never changes the catalog or sibling benefits.',
-                      ' 编辑会创建你自己的修订，不会改变目录或同卡福利。',
-                    )}
+                  ? ` ${t('benefitForm.catalogCustomized')}`
+                  : ` ${t('benefitForm.catalogRevisionHelp')}`}
               </p>
             </div>
           )}
@@ -323,13 +280,8 @@ export function BenefitFormPage() {
                 onChange={() => setEditScope('future')}
               />
               <span>
-                <strong>{localize('Future periods', '未来周期')}</strong>
-                <small>
-                  {localize(
-                    'Recommended. Current and historical usage stay unchanged.',
-                    '推荐。当前和历史使用记录保持不变。',
-                  )}
-                </small>
+                <strong>{t('benefitForm.futurePeriods')}</strong>
+                <small>{t('benefitForm.futurePeriodsHelp')}</small>
               </span>
             </label>
             <label
@@ -342,20 +294,14 @@ export function BenefitFormPage() {
                 onChange={() => setEditScope('current_and_future')}
               />
               <span>
-                <strong>{localize('Current and future', '当前及未来')}</strong>
-                <small>
-                  {localize(
-                    'Protected value/date changes are rejected if this period has usage or an email attempt.',
-                    '如果此周期已有使用记录或邮件发送尝试，受保护的金额/日期更改会被拒绝。',
-                  )}
-                </small>
+                <strong>{t('benefitForm.currentAndFuture')}</strong>
+                <small>{t('benefitForm.currentAndFutureHelp')}</small>
               </span>
             </label>
           </div>
           <label className="field compact-field">
             <span>
-              {localize('Revision boundary', '修订边界')}{' '}
-              <small>{localize('optional', '可选')}</small>
+              {t('benefitForm.revisionBoundary')} <small>{t('common.optional')}</small>
             </span>
             <input
               type="date"
@@ -363,12 +309,7 @@ export function BenefitFormPage() {
               onChange={(event) => setEffectiveBoundary(event.target.value)}
             />
           </label>
-          <p className="field-help">
-            {localize(
-              'Leave blank to use the next period boundary (or the current period start for current-and-future). A custom date must exactly match an existing occurrence boundary. For one period, use “Override this period.”',
-              '留空则使用下一个周期边界（当前及未来模式使用当前周期开始）。自定义日期必须准确匹配已有周期边界。只改一个周期请使用“仅覆盖此周期”。',
-            )}
-          </p>
+          <p className="field-help">{t('benefitForm.revisionBoundaryHelp')}</p>
         </section>
       )}
 
@@ -376,33 +317,28 @@ export function BenefitFormPage() {
         <div className="form-section-title">
           <span>{definitionId ? '2' : '1'}</span>
           <div>
-            <h2>{localize('Basics', '基本信息')}</h2>
-            <p>
-              {localize(
-                'Name the benefit and attach it to a reusable account.',
-                '命名福利并关联可重复使用的账户。',
-              )}
-            </p>
+            <h2>{t('benefitForm.basics')}</h2>
+            <p>{t('benefitForm.basicsHelp')}</p>
           </div>
         </div>
         <div className="form-grid">
           <label className="field field--wide">
-            <span>{localize('Benefit name', '福利名称')}</span>
+            <span>{t('benefitForm.benefitName')}</span>
             <input
               required
               maxLength={160}
               value={form.name}
               onChange={(event) => setForm({ ...form, name: event.target.value })}
-              placeholder={localize('$15 monthly rideshare credit', '$15 月度网约车抵扣')}
+              placeholder={t('benefitForm.benefitNamePlaceholder')}
             />
           </label>
           <label className="field">
-            <span>{localize('Card, account, or provider', '信用卡、账户或提供方')}</span>
+            <span>{t('benefitForm.cardAccountProvider')}</span>
             <select
               value={form.account_id ?? ''}
               onChange={(event) => setForm({ ...form, account_id: event.target.value || null })}
             >
-              <option value="">{localize('Unassigned', '未分配')}</option>
+              <option value="">{t('common.unassigned')}</option>
               {data.data?.accounts.map((account) => (
                 <option key={account.id} value={account.id}>
                   {account.display_name}
@@ -410,11 +346,11 @@ export function BenefitFormPage() {
               ))}
             </select>
             <small>
-              <Link to="/accounts">{localize('Manage accounts', '管理账户')}</Link>
+              <Link to="/accounts">{t('benefitForm.manageAccounts')}</Link>
             </small>
           </label>
           <label className="field">
-            <span>{localize('Category', '类别')}</span>
+            <span>{t('benefitForm.category')}</span>
             <input
               required
               list="benefit-categories"
@@ -428,27 +364,21 @@ export function BenefitFormPage() {
             </datalist>
           </label>
           <label className="field field--wide">
-            <span>{localize('Description', '描述')}</span>
+            <span>{t('benefitForm.descriptionLabel')}</span>
             <textarea
               rows={3}
               value={form.description}
               onChange={(event) => setForm({ ...form, description: event.target.value })}
-              placeholder={localize(
-                'A concise summary of what this benefit provides.',
-                '简要说明这项福利提供什么。',
-              )}
+              placeholder={t('benefitForm.descriptionPlaceholder')}
             />
           </label>
           <label className="field field--wide">
-            <span>{localize('Private notes', '私人备注')}</span>
+            <span>{t('benefitForm.privateNotes')}</span>
             <textarea
               rows={3}
               value={form.notes}
               onChange={(event) => setForm({ ...form, notes: event.target.value })}
-              placeholder={localize(
-                'Enrollment steps, exclusions, or a confirmation number—never credentials.',
-                '填写注册步骤、排除条件或确认编号，不要填写凭证。',
-              )}
+              placeholder={t('benefitForm.privateNotesPlaceholder')}
             />
           </label>
         </div>
@@ -458,23 +388,18 @@ export function BenefitFormPage() {
         <div className="form-section-title">
           <span>{definitionId ? '3' : '2'}</span>
           <div>
-            <h2>{localize('Value', '价值')}</h2>
-            <p>
-              {localize(
-                'Track what you receive, not a gross card transaction.',
-                '记录你获得的福利，而不是信用卡消费总额。',
-              )}
-            </p>
+            <h2>{t('benefitForm.value')}</h2>
+            <p>{t('benefitForm.valueHelp')}</p>
           </div>
         </div>
-        <div className="segmented" aria-label={localize('Benefit value type', '福利价值类型')}>
+        <div className="segmented" aria-label={t('benefitForm.valueType')}>
           {(
             [
-              ['money', localize('Fixed credit', '固定抵扣')],
-              ['percentage_cashback', localize('Cashback %', '返现 %')],
-              ['points', localize('Points', '积分')],
-              ['membership', localize('Membership', '会员权益')],
-              ['other', localize('Other', '其他')],
+              ['money', t('benefitForm.fixedCredit')],
+              ['percentage_cashback', t('benefitForm.cashbackPercent')],
+              ['points', t('benefitForm.points')],
+              ['membership', t('benefitForm.membership')],
+              ['other', t('benefitForm.other')],
             ] as Array<[ValueKind, string]>
           ).map(([value, label]) => (
             <button
@@ -491,9 +416,7 @@ export function BenefitFormPage() {
           {form.value_kind !== 'percentage_cashback' && (
             <label className="field">
               <span>
-                {form.value_kind === 'money'
-                  ? localize('Benefit amount', '福利金额')
-                  : localize('Quantity', '数量')}
+                {form.value_kind === 'money' ? t('benefitForm.amount') : t('benefitForm.quantity')}
               </span>
               <input
                 required
@@ -508,7 +431,7 @@ export function BenefitFormPage() {
           {form.value_kind === 'percentage_cashback' && (
             <>
               <label className="field">
-                <span>{localize('Cashback percentage', '返现比例')}</span>
+                <span>{t('benefitForm.cashbackPercentage')}</span>
                 <div className="input-suffix">
                   <input
                     required
@@ -526,8 +449,7 @@ export function BenefitFormPage() {
               </label>
               <label className="field">
                 <span>
-                  {localize('Cashback cap', '返现上限')}{' '}
-                  <small>{localize('blank = uncapped', '留空 = 不限额度')}</small>
+                  {t('benefitForm.cashbackCap')} <small>{t('benefitForm.blankUncapped')}</small>
                 </span>
                 <input
                   type="number"
@@ -543,7 +465,7 @@ export function BenefitFormPage() {
           )}
           {['money', 'percentage_cashback'].includes(form.value_kind) && (
             <label className="field">
-              <span>{localize('Currency', '货币')}</span>
+              <span>{t('accounts.currency')}</span>
               <input
                 required
                 maxLength={3}
@@ -556,13 +478,15 @@ export function BenefitFormPage() {
           )}
           {['points', 'membership', 'other'].includes(form.value_kind) && (
             <label className="field">
-              <span>{localize('Unit label', '单位名称')}</span>
+              <span>{t('benefitForm.unitLabel')}</span>
               <input
                 required
                 value={form.unit_label ?? ''}
                 onChange={(event) => setForm({ ...form, unit_label: event.target.value || null })}
                 placeholder={
-                  form.value_kind === 'points' ? localize('points', '积分') : localize('uses', '次')
+                  form.value_kind === 'points'
+                    ? t('benefitForm.unitPointsPlaceholder')
+                    : t('benefitForm.unitUsesPlaceholder')
                 }
               />
             </label>
@@ -570,8 +494,7 @@ export function BenefitFormPage() {
           {['money', 'percentage_cashback'].includes(form.value_kind) && (
             <label className="field">
               <span>
-                {localize('Minimum spend', '最低消费')}{' '}
-                <small>{localize('optional', '可选')}</small>
+                {t('dashboard.minimumSpend')} <small>{t('common.optional')}</small>
               </span>
               <input
                 type="number"
@@ -585,48 +508,38 @@ export function BenefitFormPage() {
             </label>
           )}
         </div>
-        <p className="field-help">
-          {localize(
-            'Fiat inputs support two decimals. Uncapped cashback stays “Uncapped”; usage records cashback earned, not purchase spend.',
-            '货币金额支持两位小数。不限额度返现会保持“不限额度”；使用记录填写获得的返现金额，而不是消费金额。',
-          )}
-        </p>
+        <p className="field-help">{t('benefitForm.valueRulesHelp')}</p>
       </section>
 
       <section className="panel form-section">
         <div className="form-section-title">
           <span>{definitionId ? '4' : '3'}</span>
           <div>
-            <h2>{localize('Eligibility', '适用条件')}</h2>
-            <p>
-              {localize(
-                'Capture both searchable details and the full fine print.',
-                '同时记录可搜索信息和完整细则。',
-              )}
-            </p>
+            <h2>{t('benefitForm.eligibility')}</h2>
+            <p>{t('benefitForm.eligibilityHelp')}</p>
           </div>
         </div>
         <div className="form-grid">
           <label className="field">
-            <span>{localize('Merchant', '商户')}</span>
+            <span>{t('instance.merchant')}</span>
             <input
               value={form.merchant ?? ''}
               onChange={(event) => setForm({ ...form, merchant: event.target.value || null })}
-              placeholder={localize('Saks Fifth Avenue', 'Saks Fifth Avenue')}
+              placeholder={t('benefitForm.merchantPlaceholder')}
             />
           </label>
           <label className="field">
-            <span>{localize('Merchant category', '商户类别')}</span>
+            <span>{t('instance.merchantCategory')}</span>
             <input
               value={form.merchant_category ?? ''}
               onChange={(event) =>
                 setForm({ ...form, merchant_category: event.target.value || null })
               }
-              placeholder={localize('Department store', '百货商店')}
+              placeholder={t('benefitForm.merchantCategoryPlaceholder')}
             />
           </label>
           <label className="field field--wide">
-            <span>{localize('Eligible website', '适用网站')}</span>
+            <span>{t('benefitForm.eligibleWebsite')}</span>
             <input
               type="url"
               value={form.website ?? ''}
@@ -635,7 +548,7 @@ export function BenefitFormPage() {
             />
           </label>
           <label className="field field--wide">
-            <span>{localize('Tags', '标签')}</span>
+            <span>{t('benefitForm.tags')}</span>
             <div className="tag-input">
               {form.tags.map((tag) => (
                 <button
@@ -644,7 +557,7 @@ export function BenefitFormPage() {
                   onClick={() =>
                     setForm({ ...form, tags: form.tags.filter((value) => value !== tag) })
                   }
-                  aria-label={`${localize('Remove', '移除')} ${tag}`}
+                  aria-label={`${t('benefitForm.remove')} ${tag}`}
                 >
                   {tag} ×
                 </button>
@@ -659,20 +572,17 @@ export function BenefitFormPage() {
                     setTagInput('');
                   }
                 }}
-                placeholder={localize('Type a tag and press Enter', '输入标签后按 Enter')}
+                placeholder={t('benefitForm.tagPlaceholder')}
               />
             </div>
           </label>
           <label className="field field--wide">
-            <span>{localize('Eligibility notes', '适用条件备注')}</span>
+            <span>{t('benefitForm.eligibilityNotes')}</span>
             <textarea
               rows={4}
               value={form.eligibility_notes}
               onChange={(event) => setForm({ ...form, eligibility_notes: event.target.value })}
-              placeholder={localize(
-                'Valid only for prepaid reservations booked through the provider portal…',
-                '仅适用于通过提供方门户预付的预订…',
-              )}
+              placeholder={t('benefitForm.eligibilityNotesPlaceholder')}
             />
           </label>
         </div>
@@ -682,18 +592,13 @@ export function BenefitFormPage() {
         <div className="form-section-title">
           <span>{definitionId ? '5' : '4'}</span>
           <div>
-            <h2>{localize('Dates & recurrence', '日期与周期')}</h2>
-            <p>
-              {localize(
-                'Calendar periods use real month boundaries—not a fixed number of days.',
-                '日历周期使用真实月份边界，而不是固定天数。',
-              )}
-            </p>
+            <h2>{t('benefitForm.datesRecurrence')}</h2>
+            <p>{t('benefitForm.datesHelp')}</p>
           </div>
         </div>
         <div className="form-grid">
           <label className="field">
-            <span>{localize('Effective date', '生效日期')}</span>
+            <span>{t('benefitForm.effectiveDate')}</span>
             <input
               required
               type="date"
@@ -713,12 +618,10 @@ export function BenefitFormPage() {
           <label className="field">
             <span>
               {form.recurrence_type === 'one_time'
-                ? localize('Expiration/end date', '到期/结束日期')
-                : localize('Final end date', '最终结束日期')}{' '}
+                ? t('benefitForm.expirationDate')
+                : t('benefitForm.finalEndDate')}{' '}
               <small>
-                {form.recurrence_type === 'one_time'
-                  ? localize('required', '必填')
-                  : localize('optional', '可选')}
+                {form.recurrence_type === 'one_time' ? t('common.required') : t('common.optional')}
               </small>
             </span>
             <input
@@ -729,24 +632,23 @@ export function BenefitFormPage() {
             />
           </label>
           <label className="field">
-            <span>{localize('Recurrence', '周期')}</span>
+            <span>{t('benefitForm.recurrence')}</span>
             <select
               value={form.recurrence_type}
               onChange={(event) => updateRecurrence(event.target.value as RecurrenceType)}
             >
-              <option value="one_time">{localize('One-time', '一次性')}</option>
-              <option value="monthly">{localize('Monthly', '每月')}</option>
-              <option value="quarterly">{localize('Quarterly', '每季度')}</option>
-              <option value="semiannual">{localize('Semiannual', '每半年')}</option>
-              <option value="annual">{localize('Annual', '每年')}</option>
-              <option value="custom">{localize('Custom month interval', '自定义月间隔')}</option>
+              <option value="one_time">{t('benefits.oneTime')}</option>
+              <option value="monthly">{t('benefitForm.monthly')}</option>
+              <option value="quarterly">{t('benefitForm.quarterly')}</option>
+              <option value="semiannual">{t('benefitForm.semiannual')}</option>
+              <option value="annual">{t('benefitForm.annual')}</option>
+              <option value="custom">{t('benefitForm.customMonthInterval')}</option>
             </select>
           </label>
           {form.recurrence_enabled && (
             <label className="field">
               <span>
-                {localize('Display reset date', '显示重置日期')}{' '}
-                <small>{localize('optional', '可选')}</small>
+                {t('instance.displayReset')} <small>{t('common.optional')}</small>
               </span>
               <input
                 type="date"
@@ -755,17 +657,12 @@ export function BenefitFormPage() {
                   setForm({ ...form, display_reset_date: event.target.value || null })
                 }
               />
-              <small>
-                {localize(
-                  'Informational only. Period boundaries use the recurrence basis and anchor date.',
-                  '仅供参考。周期边界使用周期基础和锚定日期。',
-                )}
-              </small>
+              <small>{t('benefitForm.displayResetHelp')}</small>
             </label>
           )}
           {form.recurrence_enabled && form.recurrence_type !== 'custom' && (
             <label className="field">
-              <span>{localize('Period basis', '周期基础')}</span>
+              <span>{t('benefitForm.periodBasis')}</span>
               <select
                 value={form.recurrence_basis}
                 onChange={(event) => {
@@ -778,15 +675,15 @@ export function BenefitFormPage() {
                   });
                 }}
               >
-                <option value="calendar">{localize('Calendar periods', '日历周期')}</option>
-                <option value="anniversary">{localize('Anchored to a date', '按日期锚定')}</option>
+                <option value="calendar">{t('benefitForm.calendarPeriods')}</option>
+                <option value="anniversary">{t('benefitForm.anchoredDate')}</option>
               </select>
             </label>
           )}
           {form.recurrence_enabled &&
             (form.recurrence_basis === 'anniversary' || form.recurrence_type === 'custom') && (
               <label className="field">
-                <span>{localize('Original anchor date', '原始锚定日期')}</span>
+                <span>{t('benefitForm.originalAnchorDate')}</span>
                 <input
                   required
                   type="date"
@@ -797,7 +694,7 @@ export function BenefitFormPage() {
             )}
           {form.recurrence_type === 'custom' && (
             <label className="field">
-              <span>{localize('Repeat every', '重复间隔')}</span>
+              <span>{t('benefitForm.repeatEvery')}</span>
               <div className="input-suffix">
                 <input
                   required
@@ -810,18 +707,13 @@ export function BenefitFormPage() {
                     setForm({ ...form, interval_months: numeric(event.target.value) })
                   }
                 />
-                <span>{localize('months', '个月')}</span>
+                <span>{t('benefitForm.months')}</span>
               </div>
             </label>
           )}
         </div>
         {form.recurrence_enabled && (
-          <div className="info-box">
-            {localize(
-              'End-of-month anchors use the last valid day without drift. A Feb 29 annual benefit uses Feb 28 in non-leap years and returns to Feb 29 in leap years.',
-              '月末锚定会使用当月最后一个有效日期，不会漂移。2 月 29 日的年度福利在非闰年使用 2 月 28 日，闰年恢复为 2 月 29 日。',
-            )}
-          </div>
+          <div className="info-box">{t('benefitForm.anchorDriftHelp')}</div>
         )}
       </section>
 
@@ -829,13 +721,8 @@ export function BenefitFormPage() {
         <div className="form-section-title">
           <span>{definitionId ? '6' : '5'}</span>
           <div>
-            <h2>{localize('Enrollment & reminders', '登记与提醒')}</h2>
-            <p>
-              {localize(
-                'Reminder email is processed securely on the server, even while this page is closed.',
-                '提醒邮件会在服务器端安全处理，即使此页面已关闭也不会停止。',
-              )}
-            </p>
+            <h2>{t('benefitForm.enrollmentReminders')}</h2>
+            <p>{t('benefitForm.remindersHelp')}</p>
           </div>
         </div>
         <div className="form-grid">
@@ -852,19 +739,14 @@ export function BenefitFormPage() {
               }
             />
             <span>
-              <strong>{localize('Enrollment is required', '需要登记')}</strong>
-              <small>
-                {localize(
-                  'Show an attention item until enrollment is recorded.',
-                  '在完成登记前显示待处理事项。',
-                )}
-              </small>
+              <strong>{t('benefitForm.enrollmentRequired')}</strong>
+              <small>{t('benefitForm.enrollmentRequiredHelp')}</small>
             </span>
           </label>
           {form.enrollment_required && (
             <>
               <label className="field">
-                <span>{localize('Enrollment deadline', '登记截止日期')}</span>
+                <span>{t('benefitForm.enrollmentDeadline')}</span>
                 <input
                   type="date"
                   value={form.enrollment_deadline ?? ''}
@@ -875,8 +757,7 @@ export function BenefitFormPage() {
               </label>
               <label className="field">
                 <span>
-                  {localize('Enrolled on', '登记日期')}{' '}
-                  <small>{localize('optional', '可选')}</small>
+                  {t('benefitForm.enrolledOn')} <small>{t('common.optional')}</small>
                 </span>
                 <input
                   type="date"
@@ -897,13 +778,8 @@ export function BenefitFormPage() {
               }
             />
             <span>
-              <strong>{localize('Expiration reminder', '到期提醒')}</strong>
-              <small>
-                {localize(
-                  'Email 7 days before expiration, with catch-up while still active.',
-                  '在到期前 7 天发送邮件；福利仍有效时会补发提醒。',
-                )}
-              </small>
+              <strong>{t('benefitForm.expirationReminder')}</strong>
+              <small>{t('benefitForm.expirationReminderHelp')}</small>
             </span>
           </label>
           <label className="check-field">
@@ -916,46 +792,31 @@ export function BenefitFormPage() {
               }
             />
             <span>
-              <strong>{localize('Available-again email', '可用额度恢复邮件')}</strong>
-              <small>
-                {localize(
-                  'Sent on the local start date of a genuinely new recurring period.',
-                  '在真正的新周期开始日期按本地时间发送。',
-                )}
-              </small>
+              <strong>{t('benefitForm.availableAgainEmail')}</strong>
+              <small>{t('benefitForm.reactivationReminderHelp')}</small>
             </span>
           </label>
           <label className="field field--wide">
-            <span>{localize('Terms timezone', '条款时区')}</span>
+            <span>{t('benefitForm.termsTimezone')}</span>
             <input
               required
               value={form.terms_timezone}
               onChange={(event) => setForm({ ...form, terms_timezone: event.target.value })}
-              placeholder={localize('America/New_York', 'America/New_York')}
+              placeholder={t('benefitForm.termsTimezonePlaceholder')}
             />
-            <small>
-              {localize(
-                'Period boundaries and statuses use this explicit IANA timezone. Email processing still follows your profile schedule.',
-                '周期边界和状态使用此明确的 IANA 时区；邮件处理仍遵循你的个人设置。',
-              )}
-            </small>
+            <small>{t('benefitForm.termsTimezoneHelp')}</small>
           </label>
         </div>
       </section>
 
       <details className="panel form-section" open={form.period_value_rules.length > 0}>
-        <summary>{localize('Advanced period-specific values', '高级：按周期设置额度')}</summary>
-        <p className="muted">
-          {localize(
-            'Optional month overrides for recurring fixed-money calendar benefits—for example $35 in December and the normal amount in other months.',
-            '为按日历周期重复的固定金额福利设置可选的月份覆盖值，例如 12 月为 $35，其余月份使用常规金额。',
-          )}
-        </p>
+        <summary>{t('benefitForm.advancedValues')}</summary>
+        <p className="muted">{t('benefitForm.advancedValuesHelp')}</p>
         <div className="form-stack">
           {form.period_value_rules.map((rule, index) => (
             <div className="form-grid" key={`${rule.calendar_month}-${index}`}>
               <label className="field">
-                <span>{localize('Calendar month', '日历月份')}</span>
+                <span>{t('benefitForm.calendarMonth')}</span>
                 <select
                   value={rule.calendar_month}
                   onChange={(event) =>
@@ -980,7 +841,7 @@ export function BenefitFormPage() {
                 </select>
               </label>
               <label className="field">
-                <span>{localize('Available value', '可用额度')}</span>
+                <span>{t('benefitForm.availableValue')}</span>
                 <input
                   type="number"
                   min="0.01"
@@ -1010,7 +871,7 @@ export function BenefitFormPage() {
                   })
                 }
               >
-                {localize('Remove override', '移除覆盖值')}
+                {t('benefitForm.removeOverride')}
               </button>
             </div>
           ))}
@@ -1033,22 +894,17 @@ export function BenefitFormPage() {
                 });
             }}
           >
-            {localize('Add month override', '添加月份覆盖值')}
+            {t('benefitForm.addMonthOverride')}
           </button>
         </div>
       </details>
 
       {!definitionId && (
         <details className="panel form-section">
-          <summary>{localize('Optional historical backfill', '可选：补录历史周期')}</summary>
-          <p className="muted">
-            {localize(
-              'Normal creation starts with the current period. Generate up to 24 months only when you intentionally want older empty history.',
-              '正常创建从当前周期开始。只有在确实需要补充较早的空历史记录时，才生成最多 24 个月。',
-            )}
-          </p>
+          <summary>{t('benefitForm.historicalBackfill')}</summary>
+          <p className="muted">{t('benefitForm.historicalBackfillHelp')}</p>
           <label className="field compact-field">
-            <span>{localize('Months to backfill', '补录月数')}</span>
+            <span>{t('benefitForm.monthsToBackfill')}</span>
             <input
               type="number"
               min="0"
@@ -1068,12 +924,7 @@ export function BenefitFormPage() {
                 onChange={(event) => setConfirmedBackfill(event.target.checked)}
               />
               <span>
-                <strong>
-                  {localize(
-                    'I understand these periods will not send reactivation email.',
-                    '我了解这些周期不会发送额度恢复邮件。',
-                  )}
-                </strong>
+                <strong>{t('benefitForm.backfillAcknowledgement')}</strong>
               </span>
             </label>
           )}
@@ -1087,14 +938,14 @@ export function BenefitFormPage() {
       )}
       <div className="sticky-actions">
         <Link className="button button--secondary" to={definitionId ? '/benefits' : '/dashboard'}>
-          {localize('Cancel', '取消')}
+          {t('benefitForm.cancel')}
         </Link>
         <button className="button button--primary" type="submit" disabled={busy}>
           {busy
-            ? localize('Saving safely…', '正在安全保存…')
+            ? t('benefitForm.saving')
             : definitionId
-              ? localize('Save new revision', '保存新版本')
-              : localize('Create benefit', '创建福利')}
+              ? t('benefitForm.saveRevision')
+              : t('benefitForm.create')}
         </button>
       </div>
     </form>

@@ -11,14 +11,21 @@ import { useI18n, type MessageKey } from '../features/i18n/I18nContext';
 import { useAsync } from '../hooks/useAsync';
 import {
   confirmBenefitPeriodUsed,
+  deleteRedemption,
   listAccounts,
   listInstances,
   markUncappedComplete,
   recordRedemption,
+  reopenConfirmedBenefitPeriod,
   reopenUncappedComplete,
   schedulerHealth,
 } from '../services/api';
 import type { Account, BenefitInstance } from '../types';
+
+type RecordedAction =
+  | { kind: 'confirmed'; instanceId: string; redemptionId: string }
+  | { kind: 'confirmed-manual'; instanceId: string }
+  | { kind: 'redemption'; instanceId: string; redemptionId: string };
 
 const groupLabels: Record<
   UrgencyGroup,
@@ -53,26 +60,43 @@ function simplifyCardName(issuer: string | null | undefined, product: string | n
 function cardLabel(
   account: Account | undefined,
   instance: BenefitInstance,
-  localize: (english: string, simplifiedChinese: string) => string,
+  t: (key: MessageKey) => string,
 ) {
   const nickname = account?.nickname?.trim();
   if (nickname) return nickname;
   return (
     simplifyCardName(
       account?.issuer ?? instance.issuer,
-      account?.card_service_name ?? instance.account_display_name,
+      account?.card_service_name || account?.display_name || instance.account_display_name,
     ) ||
     instance.account_display_name ||
     instance.issuer ||
-    localize('Unassigned', '未分配')
+    t('common.unassigned')
   );
+}
+
+function isBroadMerchantLabel(merchant: string | null | undefined) {
+  const label = merchant?.trim().replace(/\s+/g, ' ');
+  if (!label) return false;
+  const broadCategory =
+    /^(?:(?:eligible|participating|select|any|all|multiple|various|qualifying|qualified)\s+)?(?:merchants?|restaurants?|dining|airlines?|hotels?|retailers?|stores?|providers?|transit|rideshares?|travel portals?|purchases?)(?:\s+(?:bookings?|purchases?|stays?))?$/i.test(
+      label,
+    );
+  const merchantList = label.split(/\s*(?:,|\/|\band\b|\bor\b)\s*/i);
+  return broadCategory || merchantList.length > 1;
 }
 
 function hasMerchantGuidance(instance: BenefitInstance) {
   return Boolean(
-    !instance.merchant &&
+    (!instance.merchant || isBroadMerchantLabel(instance.merchant)) &&
       (instance.merchant_category || instance.eligibility_notes || instance.website),
   );
+}
+
+function merchantGuidanceLabel(instance: BenefitInstance, t: (key: MessageKey) => string) {
+  return instance.merchant?.trim() && isBroadMerchantLabel(instance.merchant)
+    ? instance.merchant
+    : instance.merchant_category || t('dashboard.condition');
 }
 
 function conditionSummary(
@@ -109,16 +133,19 @@ function relativeDeadline(
 
 export function DashboardPage() {
   const { today } = useBusinessDate();
-  const { language, t, localize } = useI18n();
+  const { language, t } = useI18n();
   const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US';
   const [selected, setSelected] = useState<BenefitInstance | null>(null);
   const [merchantInstanceId, setMerchantInstanceId] = useState<string | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
   const [usedOn, setUsedOn] = useState(today);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ title: string; body: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completedInstance, setCompletedInstance] = useState<BenefitInstance | null>(null);
+  const [recordedInstance, setRecordedInstance] = useState<BenefitInstance | null>(null);
+  const [recordedAction, setRecordedAction] = useState<RecordedAction | null>(null);
+  const [hiddenInstanceIds, setHiddenInstanceIds] = useState<Set<string>>(() => new Set());
   const modalRef = useRef<HTMLElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const result = useAsync(async () => {
@@ -134,8 +161,11 @@ export function DashboardPage() {
     [result.data?.accounts],
   );
   const outstanding = useMemo(
-    () => (result.data?.instances ?? []).filter(isOutstanding),
-    [result.data?.instances],
+    () =>
+      (result.data?.instances ?? []).filter(
+        (instance) => !hiddenInstanceIds.has(instance.instance_id) && isOutstanding(instance),
+      ),
+    [hiddenInstanceIds, result.data?.instances],
   );
   const sections = useMemo(() => groupOutstanding(outstanding, today), [outstanding, today]);
 
@@ -191,13 +221,58 @@ export function DashboardPage() {
     if (!window.confirm(t('dashboard.completeConfirm'))) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
+    setRecordedInstance(null);
+    setRecordedAction(null);
     try {
       await markUncappedComplete(instance.instance_id, 'Marked complete from dashboard.');
-      setMessage(t('dashboard.recorded'));
       setCompletedInstance(instance);
       result.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('dashboard.completeError'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmUsed(instance: BenefitInstance) {
+    if (busy) return;
+    if (!window.confirm(t('dashboard.confirmUsedConfirm'))) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    setRecordedInstance(null);
+    setRecordedAction(null);
+    setCompletedInstance(null);
+    try {
+      const confirmation = await confirmBenefitPeriodUsed(
+        instance.instance_id,
+        today,
+        'Confirmed used from dashboard.',
+      );
+      setHiddenInstanceIds((current) => new Set(current).add(instance.instance_id));
+      setNotice({ title: t('dashboard.recorded'), body: t('dashboard.recordedBody') });
+      setRecordedInstance(instance);
+      setRecordedAction(
+        confirmation.archived
+          ? confirmation.confirmation_redemption_id
+            ? {
+                kind: 'confirmed',
+                instanceId: instance.instance_id,
+                redemptionId: confirmation.confirmation_redemption_id,
+              }
+            : { kind: 'confirmed-manual', instanceId: instance.instance_id }
+          : confirmation.confirmation_redemption_id
+            ? {
+                kind: 'redemption',
+                instanceId: instance.instance_id,
+                redemptionId: confirmation.confirmation_redemption_id,
+              }
+            : null,
+      );
+      result.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('dashboard.saveError'));
     } finally {
       setBusy(false);
     }
@@ -210,7 +285,9 @@ export function DashboardPage() {
     try {
       await reopenUncappedComplete(completedInstance.instance_id);
       setCompletedInstance(null);
-      setMessage(t('dashboard.reopened'));
+      setNotice({ title: t('dashboard.reopened'), body: t('dashboard.reopenedBody') });
+      setRecordedInstance(null);
+      setRecordedAction(null);
       result.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('dashboard.completeError'));
@@ -221,8 +298,16 @@ export function DashboardPage() {
 
   async function saveUsage(event: FormEvent) {
     event.preventDefault();
-    if (!selected || amount === null || amount <= 0) {
+    if (!selected || amount === null || !Number.isFinite(amount) || amount <= 0) {
       setError(t('dashboard.invalidAmount'));
+      return;
+    }
+    if (selected.remaining_quantity !== null && amount > selected.remaining_quantity) {
+      setError(t('dashboard.amountExceedsRemaining'));
+      return;
+    }
+    if (selected.value_kind === 'points' && !Number.isInteger(amount)) {
+      setError(t('dashboard.wholePoints'));
       return;
     }
     if (
@@ -234,22 +319,80 @@ export function DashboardPage() {
     setBusy(true);
     setError(null);
     try {
+      let action: RecordedAction | null;
       if (selected.remaining_quantity !== null && amount >= selected.remaining_quantity) {
-        await confirmBenefitPeriodUsed(selected.instance_id, usedOn, 'Recorded from dashboard.');
+        const confirmation = await confirmBenefitPeriodUsed(
+          selected.instance_id,
+          usedOn,
+          'Recorded from dashboard.',
+        );
+        action = confirmation.archived
+          ? confirmation.confirmation_redemption_id
+            ? {
+                kind: 'confirmed',
+                instanceId: selected.instance_id,
+                redemptionId: confirmation.confirmation_redemption_id,
+              }
+            : { kind: 'confirmed-manual', instanceId: selected.instance_id }
+          : confirmation.confirmation_redemption_id
+            ? {
+                kind: 'redemption',
+                instanceId: selected.instance_id,
+                redemptionId: confirmation.confirmation_redemption_id,
+              }
+            : null;
       } else {
-        await recordRedemption(selected.instance_id, {
+        const redemption = await recordRedemption(selected.instance_id, {
           quantity: amount,
           used_on: usedOn,
           merchant: selected.merchant,
           transaction_description: null,
           notes: 'Recorded from dashboard.',
         });
+        action = redemption?.id
+          ? { kind: 'redemption', instanceId: selected.instance_id, redemptionId: redemption.id }
+          : null;
       }
       setSelected(null);
-      setMessage(t('dashboard.recorded'));
+      if (selected.remaining_quantity !== null && amount >= selected.remaining_quantity) {
+        setHiddenInstanceIds((current) => new Set(current).add(selected.instance_id));
+      }
+      setNotice({ title: t('dashboard.recorded'), body: t('dashboard.recordedBody') });
+      setRecordedInstance(selected);
+      setRecordedAction(action);
+      setCompletedInstance(null);
       result.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('dashboard.saveError'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function undoRecordedUsage() {
+    if (!recordedAction || busy) return;
+    if (!window.confirm(t('dashboard.undoUsageConfirm'))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (recordedAction.kind === 'confirmed') {
+        await reopenConfirmedBenefitPeriod(recordedAction.instanceId, recordedAction.redemptionId);
+      } else if (recordedAction.kind === 'confirmed-manual') {
+        await reopenConfirmedBenefitPeriod(recordedAction.instanceId);
+      } else {
+        await deleteRedemption(recordedAction.redemptionId);
+      }
+      setHiddenInstanceIds((current) => {
+        const next = new Set(current);
+        next.delete(recordedAction.instanceId);
+        return next;
+      });
+      setRecordedAction(null);
+      setRecordedInstance(null);
+      setNotice({ title: t('dashboard.reopened'), body: t('dashboard.reopenedUsageBody') });
+      result.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('dashboard.undoUsageError'));
     } finally {
       setBusy(false);
     }
@@ -266,10 +409,27 @@ export function DashboardPage() {
           <Link to="/settings">{t('dashboard.recovery')}</Link>
         </div>
       )}
-      {message && (
+      {notice && (
         <div className="alert alert--success" role="status">
-          <strong>{message}</strong>
-          <span>{t('dashboard.recordedBody')}</span>
+          <strong>{notice.title}</strong>
+          <span>{notice.body}</span>
+          {recordedInstance && (
+            <>
+              <Link className="text-link" to={`/instances/${recordedInstance.instance_id}`}>
+                {t('dashboard.openDetails')}
+              </Link>
+              {recordedAction && (
+                <button
+                  className="text-link"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void undoRecordedUsage()}
+                >
+                  {t('dashboard.undoUsage')}
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
       {completedInstance && (
@@ -295,7 +455,7 @@ export function DashboardPage() {
         title={t('dashboard.title')}
         description={t('dashboard.description')}
         action={
-          <Link className="button button--primary" to="/benefits/new">
+          <Link className="button button--secondary" to="/benefits/new">
             <Icon name="plus" />
             {t('common.addBenefit')}
           </Link>
@@ -328,7 +488,12 @@ export function DashboardPage() {
               key={group}
               aria-labelledby={`group-${group}`}
             >
-              <h3 id={`group-${group}`}>{t(groupLabels[group])}</h3>
+              <div className="dashboard-group-heading">
+                <h3 id={`group-${group}`}>{t(groupLabels[group])}</h3>
+                <span aria-label={`${instances.length} ${t('dashboard.groupCount')}`}>
+                  {instances.length}
+                </span>
+              </div>
               <div className="dashboard-benefit-list">
                 {instances.map((instance) => {
                   const account = instance.account_id
@@ -353,7 +518,7 @@ export function DashboardPage() {
                           {instance.benefit_name}
                         </Link>
                         <span className="dashboard-benefit-card">
-                          {cardLabel(account, instance, localize)}
+                          {cardLabel(account, instance, t)}
                           {account?.last_four ? ` · •••• ${account.last_four}` : ''}
                         </span>
                         <span className="dashboard-benefit-condition">
@@ -361,13 +526,22 @@ export function DashboardPage() {
                         </span>
                       </div>
                       <div className="dashboard-benefit-value">
-                        <strong>
-                          {formatQuantity(instance.remaining_quantity, quantityOptions)}
-                        </strong>
-                        <span>
-                          {t('dashboard.remaining')} {t('dashboard.of')}{' '}
-                          {formatQuantity(instance.available_quantity, quantityOptions)}
-                        </span>
+                        {instance.remaining_quantity === null ? (
+                          <>
+                            <strong>{t('dashboard.uncapped')}</strong>
+                            <span>{t('dashboard.trackUsage')}</span>
+                          </>
+                        ) : (
+                          <>
+                            <strong>
+                              {formatQuantity(instance.remaining_quantity, quantityOptions)}
+                            </strong>
+                            <span>
+                              {t('dashboard.remaining')} {t('dashboard.of')}{' '}
+                              {formatQuantity(instance.available_quantity, quantityOptions)}
+                            </span>
+                          </>
+                        )}
                       </div>
                       <div className="dashboard-benefit-deadline">
                         <strong>{relativeDeadline(instance, t, locale)}</strong>
@@ -393,7 +567,7 @@ export function DashboardPage() {
                               )
                             }
                           >
-                            {instance.merchant_category || t('dashboard.condition')}
+                            {merchantGuidanceLabel(instance, t)}
                           </button>
                           {merchantInstanceId === instance.instance_id && (
                             <div
@@ -403,6 +577,9 @@ export function DashboardPage() {
                               aria-label={t('dashboard.condition')}
                             >
                               <strong>{t('dashboard.condition')}</strong>
+                              {instance.merchant && isBroadMerchantLabel(instance.merchant) && (
+                                <span>{instance.merchant}</span>
+                              )}
                               {instance.merchant_category && (
                                 <span>{instance.merchant_category}</span>
                               )}
@@ -437,13 +614,24 @@ export function DashboardPage() {
                           </button>
                         </>
                       ) : (
-                        <button
-                          className="button button--secondary button--small"
-                          type="button"
-                          onClick={() => openUsage(instance)}
-                        >
-                          {t('dashboard.recordUsage')}
-                        </button>
+                        <>
+                          <button
+                            className="button button--primary button--small"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void confirmUsed(instance)}
+                          >
+                            {t('common.confirmUsed')}
+                          </button>
+                          <button
+                            className="button button--secondary button--small"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => openUsage(instance)}
+                          >
+                            {t('dashboard.recordUsage')}
+                          </button>
+                        </>
                       )}
                     </article>
                   );

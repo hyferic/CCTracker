@@ -16,6 +16,18 @@ function Probe() {
   );
 }
 
+function MigratedKeyProbe() {
+  const { language, setLanguage, t } = useI18n();
+  return (
+    <>
+      <p>{t('benefitTable.caption')}</p>
+      <button type="button" onClick={() => setLanguage(language === 'en' ? 'zh-CN' : 'en')}>
+        {t('login.homeAria')}
+      </button>
+    </>
+  );
+}
+
 describe('language initialization and persistence', () => {
   beforeEach(() => {
     const values = new Map<string, string>();
@@ -65,5 +77,28 @@ describe('language initialization and persistence', () => {
     expect(screen.getByRole('button', { name: '语言' })).toBeInTheDocument();
     await waitFor(() => expect(updateProfileLanguage).toHaveBeenCalledWith('zh-CN'));
     expect(replaceProfile).toHaveBeenCalled();
+  });
+
+  it('updates migrated UI resource keys immediately when the language changes', async () => {
+    updateProfileLanguage.mockResolvedValue({ ...profileFixture(), language: 'zh-CN' });
+    render(
+      <ProfileContext.Provider
+        value={{
+          profile: profileFixture(),
+          timezone: 'America/New_York',
+          replaceProfile: vi.fn(),
+          refreshProfile: vi.fn(),
+        }}
+      >
+        <I18nProvider>
+          <MigratedKeyProbe />
+        </I18nProvider>
+      </ProfileContext.Provider>,
+    );
+    expect(screen.getByText('Benefit periods and remaining values')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'PerkLedger home' }));
+    expect(screen.getByText('福利周期与剩余价值')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'PerkLedger 首页' })).toBeInTheDocument();
+    await waitFor(() => expect(updateProfileLanguage).toHaveBeenCalledWith('zh-CN'));
   });
 });

@@ -3,7 +3,7 @@ import { formatDate } from '../domain/dates';
 import { formatQuantity } from '../domain/money';
 import type { BenefitInstance } from '../types';
 import { StatusBadge } from './StatusBadge';
-import { useOptionalI18n } from '../features/i18n/I18nContext';
+import { useOptionalI18n, type MessageKey } from '../features/i18n/I18nContext';
 
 function valueLabel(instance: BenefitInstance, value: number | null, locale: string) {
   return formatQuantity(value, {
@@ -13,6 +13,30 @@ function valueLabel(instance: BenefitInstance, value: number | null, locale: str
     locale,
   });
 }
+
+const fallbackMessages: Partial<Record<MessageKey, string>> = {
+  'benefitTable.caption': 'Benefit periods and remaining values',
+  'benefitTable.minimumSpendSummary': '{value} minimum spend',
+  'common.actions': 'Actions',
+  'common.auditVersion': 'Audit version',
+  'common.ago': 'ago',
+  'common.benefit': 'Benefit',
+  'common.confirmUsed': 'Confirm used',
+  'common.endsToday': 'Ends today',
+  'common.period': 'Period',
+  'common.starts': 'Starts',
+  'common.status': 'Status',
+  'common.timeLeft': 'Time left',
+  'common.unassigned': 'Unassigned',
+  'common.value': 'Value',
+  'common.view': 'View',
+  'dashboard.cashback': 'cashback',
+  'dashboard.minimumSpend': 'Minimum spend',
+  'dashboard.of': 'of',
+  'dashboard.remaining': 'remaining',
+  'dashboard.saving': 'Saving…',
+  'status.days': '{count} days',
+};
 
 export function BenefitTable({
   instances,
@@ -27,33 +51,21 @@ export function BenefitTable({
 }) {
   const i18n = useOptionalI18n();
   const language = i18n?.language ?? 'en';
-  const t =
-    i18n?.t ??
-    ((key: string) =>
-      ({
-        'dashboard.remaining': 'remaining',
-        'dashboard.cashback': 'cashback',
-        'dashboard.minimumSpend': 'minimum spend',
-        'dashboard.saving': 'Saving…',
-        'status.days': '{count} days',
-      })[key] ?? key);
-  const localize = i18n?.localize ?? ((english: string) => english);
+  const t = i18n?.t ?? ((key: MessageKey) => fallbackMessages[key] ?? key);
   const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US';
   return (
     <div className="table-wrap">
       <table className="benefit-table">
-        <caption className="sr-only">
-          {localize('Benefit periods and remaining values', '福利周期与剩余价值')}
-        </caption>
+        <caption className="sr-only">{t('benefitTable.caption')}</caption>
         <thead>
           <tr>
-            <th scope="col">{localize('Benefit', '福利')}</th>
-            <th scope="col">{localize('Value', '价值')}</th>
-            <th scope="col">{localize('Period', '周期')}</th>
-            <th scope="col">{localize('Status', '状态')}</th>
-            <th scope="col">{localize('Time left', '剩余时间')}</th>
+            <th scope="col">{t('common.benefit')}</th>
+            <th scope="col">{t('common.value')}</th>
+            <th scope="col">{t('common.period')}</th>
+            <th scope="col">{t('common.status')}</th>
+            <th scope="col">{t('common.timeLeft')}</th>
             <th scope="col">
-              <span className="sr-only">{localize('Actions', '操作')}</span>
+              <span className="sr-only">{t('common.actions')}</span>
             </th>
           </tr>
         </thead>
@@ -63,22 +75,14 @@ export function BenefitTable({
               instance.value_kind === 'percentage_cashback' && instance.cashback_percentage !== null
                 ? `${instance.cashback_percentage}% ${t('dashboard.cashback')}${
                     instance.minimum_spend !== null
-                      ? ` · ${
-                          language === 'zh-CN'
-                            ? `${localize('Minimum spend', '最低消费')} ${formatQuantity(
-                                instance.minimum_spend,
-                                {
-                                  valueKind: 'money',
-                                  currency: instance.currency,
-                                  locale,
-                                },
-                              )}`
-                            : `${formatQuantity(instance.minimum_spend, {
-                                valueKind: 'money',
-                                currency: instance.currency,
-                                locale,
-                              })} ${t('dashboard.minimumSpend')}`
-                        }`
+                      ? ` · ${t('benefitTable.minimumSpendSummary').replace(
+                          '{value}',
+                          formatQuantity(instance.minimum_spend, {
+                            valueKind: 'money',
+                            currency: instance.currency,
+                            locale,
+                          }),
+                        )}`
                       : ''
                   }`
                 : null;
@@ -88,7 +92,7 @@ export function BenefitTable({
                 key={instance.instance_id}
                 className={instance.expiring_7_days ? 'row--urgent' : ''}
               >
-                <td data-label={localize('Benefit', '福利')}>
+                <td data-label={t('common.benefit')}>
                   <Link className="benefit-name" to={`/instances/${instance.instance_id}`}>
                     {instance.benefit_name}
                   </Link>
@@ -96,43 +100,42 @@ export function BenefitTable({
                     {accountLabel?.(instance) ??
                       instance.account_display_name ??
                       instance.issuer ??
-                      localize('Unassigned', '未分配')}{' '}
+                      t('common.unassigned')}{' '}
                     · {instance.category}
                   </span>
                   {instance.is_audit_version && (
                     <span className="mini-status mini-status--danger">
-                      {localize('Audit version', '审计版本')} {instance.instance_version}
+                      {t('common.auditVersion')} {instance.instance_version}
                     </span>
                   )}
                 </td>
-                <td data-label={localize('Value', '价值')}>
+                <td data-label={t('common.value')}>
                   <strong>{valueLabel(instance, instance.remaining_quantity, locale)}</strong>
                   <span className="cell-subtitle">
-                    {localize('of', '共')}{' '}
-                    {valueLabel(instance, instance.available_quantity, locale)}{' '}
+                    {t('dashboard.of')} {valueLabel(instance, instance.available_quantity, locale)}{' '}
                     {t('dashboard.remaining')}
                   </span>
                   {cashbackSummary && <span className="cell-subtitle">{cashbackSummary}</span>}
                 </td>
-                <td data-label={localize('Period', '周期')}>
+                <td data-label={t('common.period')}>
                   <strong>{instance.period_label}</strong>
                   <span className="cell-subtitle">
                     {formatDate(instance.period_start, locale)} –{' '}
                     {formatDate(instance.period_end, locale)}
                   </span>
                 </td>
-                <td data-label={localize('Status', '状态')}>
+                <td data-label={t('common.status')}>
                   <StatusBadge instance={instance} />
                 </td>
-                <td data-label={localize('Time left', '剩余时间')}>
+                <td data-label={t('common.timeLeft')}>
                   <strong className={instance.expiring_7_days ? 'text-danger' : ''}>
                     {instance.lifecycle_status === 'upcoming'
-                      ? `${localize('Starts', '开始于')} ${formatDate(instance.period_start, locale)}`
+                      ? `${t('common.starts')} ${formatDate(instance.period_start, locale)}`
                       : instance.days_remaining === 0
-                        ? localize('Ends today', '今天到期')
+                        ? t('common.endsToday')
                         : instance.days_remaining > 0
                           ? t('status.days').replace('{count}', String(instance.days_remaining))
-                          : `${t('status.days').replace('{count}', String(Math.abs(instance.days_remaining)))} ${localize('ago', '前')}`}
+                          : `${t('status.days').replace('{count}', String(Math.abs(instance.days_remaining)))} ${t('common.ago')}`}
                   </strong>
                 </td>
                 <td>
@@ -148,11 +151,11 @@ export function BenefitTable({
                       >
                         {confirmingInstanceId === instance.instance_id
                           ? t('dashboard.saving')
-                          : localize('Confirm used', '确认已使用')}
+                          : t('common.confirmUsed')}
                       </button>
                     )}
                   <Link className="text-link" to={`/instances/${instance.instance_id}`}>
-                    {localize('View', '查看')}
+                    {t('common.view')}
                   </Link>
                 </td>
               </tr>

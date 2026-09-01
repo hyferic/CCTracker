@@ -15,13 +15,11 @@
 
 | Requirement | Implementation | Test/evidence | Status |
 | --- | --- | --- | --- |
-| Responsive dashboard with name, provider/card, category, value/remaining, dates, recurrence, status, and days remaining | `src/pages/DashboardPage.tsx`, `src/components/BenefitTable.tsx`, `src/components/StatusBadge.tsx` | `src/components/BenefitTable.test.tsx`; desktop/mobile auth-shell smoke; production checklist §11 | PASS |
-| Upcoming, Available, Partially Used, Used, Expiring Soon, and Expired states | `src/domain/status.ts`; database dashboard view | `src/domain/status.test.ts`; `supabase/tests/002_lifecycle_redemptions_rls.sql` | PASS |
-| Clear seven-day, available-unused, used, recently reset, and reset-soon cues | urgent rows/status badges and Needs Attention scoring/labels in dashboard | status and table unit tests; manual dashboard scenario in `DEPLOYMENT.md` §11 | PASS |
-| Summary cards and prioritized Needs Attention area | currency totals, 7/30-day counts, unused/uncapped counts, attention scoring | `src/domain/money.test.ts`; manual responsive check | PASS |
-| Search, sorting, and filters | dashboard search includes merchant/provider/notes; account, provider, merchant, category, lifecycle, usage, recurrence, expiration, enrollment, active/inactive, and live/audit-version controls | `src/pages/core-flows.test.tsx`; authenticated E2E; production checklist §11 | PASS |
+| Focused responsive dashboard with only live outstanding benefits | `src/pages/DashboardPage.tsx`, `src/domain/dashboard.ts`, `src/components/StatusBadge.tsx` | `src/domain/dashboard.test.ts`; `src/pages/core-flows.test.tsx`; desktop/mobile auth-shell smoke | PASS |
+| Automatic urgency grouping and scan-friendly benefit rows | soon, month, quarter, year, and no-deadline groups ordered by deadline, partial state, cadence, and remaining value | `src/domain/dashboard.test.ts`; dashboard core-flow coverage; production checklist §11 | PASS |
+| Search, sorting, and filters | management/history pages retain controls; the Dashboard has no filters and uses automatic ordering | `src/pages/core-flows.test.tsx`; authenticated E2E; production checklist §11 | PASS |
 | Clean mobile/desktop behavior and baseline accessibility | semantic forms/table, responsive CSS, reduced motion, touch sizing | `e2e/auth-shell.spec.ts` Axe + 320px checks; `scripts/smoke-pages.mjs`; manual keyboard/screen-reader check | PASS |
-| Obvious Add Benefit, Record Usage, Edit, Mark Used, Filter, and Upcoming actions | dashboard, benefit, and instance routes/pages | component/source audit; production checklist §11 | PASS |
+| Obvious Add Benefit, Confirm Used, Record Usage, Edit, and Undo/Correction actions | dashboard and instance routes/pages | `src/pages/core-flows.test.tsx`; component/source audit; production checklist §11 | PASS |
 
 ## Accounts, benefits, and eligibility
 
@@ -103,7 +101,7 @@
 | Protected database/Edge deployment | exact-ref confirmation, exact-commit successful-CI gate, production environment, lint/dry-run/push/function health | `.github/workflows/deploy-backend.yml`; deployment checklist §8 | PASS |
 | Vault-backed Cron and protected manual recovery | named Vault secrets, Cron installer, recovery dispatch confirmation/concurrency | migration `00700`; backend/recovery workflow smoke; live Cron inspection | PASS |
 | Cron caller timeout covers bounded processor | `pg_net` timeout 120 seconds; processor maximum 110 seconds | schema pgTAP source assertion; Edge slow-provider/runtime tests; deployment inspection | PASS |
-| Authenticated frontend↔Supabase contract coverage | CI derives real local URL/key, signs in seeded owner, and runs account/benefit/redemption/filter/import-rollback flow; auth shell remains Chromium/WebKit | `e2e/authenticated.spec.ts`; `e2e/auth-shell.spec.ts`; `.github/workflows/ci.yml` | PASS |
+| Authenticated frontend↔Supabase contract coverage | CI derives real local URL/key, signs in seeded owner, and runs account/benefit/redemption/outstanding-dashboard/import-rollback flow; auth shell remains Chromium/WebKit | `e2e/authenticated.spec.ts`; `e2e/auth-shell.spec.ts`; `.github/workflows/ci.yml` | PASS |
 | CSV export neutralizes formula injection | text cells with `=`, `+`, `-`, or `@` receive spreadsheet-safe prefix while numeric negatives remain numeric | `src/domain/portability.test.ts`; production spreadsheet check | PASS |
 | Exact variables, secret sources/destinations, and browser safety documented | `.env.example`; configuration matrix | `DEPLOYMENT.md` configuration audit | PASS |
 | Comprehensive setup/update/security/cost/troubleshooting documentation | `README.md`, `DEPLOYMENT.md`, `PLAN.md` | Agent 4 documentation audit | PASS |

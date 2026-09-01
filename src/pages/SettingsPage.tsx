@@ -22,53 +22,42 @@ import {
   updateProfile,
 } from '../services/api';
 import type { Profile } from '../types';
-import { useI18n } from '../features/i18n/I18nContext';
+import { useI18n, type MessageKey } from '../features/i18n/I18nContext';
 
-type Localize = (english: string, simplifiedChinese: string) => string;
+type T = (key: MessageKey) => string;
 
-function localizeEntity(
-  entity: 'accounts' | 'definitions' | 'instances' | 'redemptions',
-  localize: Localize,
-) {
+function entityLabel(entity: 'accounts' | 'definitions' | 'instances' | 'redemptions', t: T) {
   return {
-    accounts: localize('Accounts', '账户'),
-    definitions: localize('Definitions', '福利定义'),
-    instances: localize('Periods', '周期'),
-    redemptions: localize('Usage entries', '使用记录'),
+    accounts: t('settings.entity.accounts'),
+    definitions: t('settings.entity.definitions'),
+    instances: t('settings.entity.instances'),
+    redemptions: t('settings.entity.redemptions'),
   }[entity];
 }
 
-function localizeNotificationState(state: string, localize: Localize) {
-  const labels: Record<string, [string, string]> = {
-    provider_accepted: ['Provider accepted', '服务商已接受'],
-    pending: ['Pending', '待处理'],
-    failed_retryable: ['Retryable failure', '可重试失败'],
-    failed_terminal: ['Permanent failure', '永久失败'],
-    requires_review: ['Requires review', '需要检查'],
+function notificationStateLabel(state: string, t: T) {
+  const keys: Record<string, MessageKey> = {
+    provider_accepted: 'settings.notificationState.providerAccepted',
+    pending: 'settings.notificationState.pending',
+    failed_retryable: 'settings.notificationState.failedRetryable',
+    failed_terminal: 'settings.notificationState.failedTerminal',
+    requires_review: 'settings.notificationState.requiresReview',
   };
-  const [english, simplifiedChinese] = labels[state] ?? [
-    state.replaceAll('_', ' '),
-    state.replaceAll('_', ' '),
-  ];
-  return localize(english, simplifiedChinese);
+  return keys[state] ? t(keys[state]) : state.replaceAll('_', ' ');
 }
 
-function localizeNotificationType(type: string, localize: Localize) {
-  const labels: Record<string, [string, string]> = {
-    expiration: ['Expiration', '到期'],
-    reactivation: ['Available again', '重新可用'],
+function notificationTypeLabel(type: string, t: T) {
+  const keys: Record<string, MessageKey> = {
+    expiration: 'settings.notificationType.expiration',
+    reactivation: 'settings.notificationType.reactivation',
   };
-  const [english, simplifiedChinese] = labels[type] ?? [
-    type.replaceAll('_', ' '),
-    type.replaceAll('_', ' '),
-  ];
-  return localize(english, simplifiedChinese);
+  return keys[type] ? t(keys[type]) : type.replaceAll('_', ' ');
 }
 
 export function SettingsPage() {
   const auth = useAuth();
   const { profile, replaceProfile, timezone } = useProfile();
-  const { language, setLanguage, t, localize } = useI18n();
+  const { language, setLanguage, t } = useI18n();
   const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US';
   const { today } = useBusinessDate();
   const result = useAsync(async () => {
@@ -167,12 +156,7 @@ export function SettingsPage() {
       const data = await getExportData();
       const rows = entity === 'instances' ? data.csvInstances : data[entity];
       downloadText(`perkledger-${entity}.csv`, toCsv(rows), 'text/csv;charset=utf-8');
-      setMessage(
-        t('settings.csvExported').replace(
-          '{entity}',
-          `${entity[0]?.toUpperCase()}${entity.slice(1)}`,
-        ),
-      );
+      setMessage(t('settings.csvExported').replace('{entity}', entityLabel(entity, t)));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('settings.csvError'));
     } finally {
@@ -331,13 +315,8 @@ export function SettingsPage() {
               }
             />
             <span>
-              <strong>{localize('Expiration reminders', '到期提醒')}</strong>
-              <small>
-                {localize(
-                  'Send one logical event 7 days before expiration, with active-period catch-up.',
-                  '在到期前 7 天发送一次提醒；如果任务错过，会在周期仍有效时补发。',
-                )}
-              </small>
+              <strong>{t('settings.expirationReminders')}</strong>
+              <small>{t('settings.expirationRemindersHelp')}</small>
             </span>
           </label>
           <label className="check-field">
@@ -352,17 +331,12 @@ export function SettingsPage() {
               }
             />
             <span>
-              <strong>{localize('Available-again reminders', '重新可用提醒')}</strong>
-              <small>
-                {localize(
-                  'Send only for genuinely new, pre-generated periods on their local start date.',
-                  '只在真正新生成的周期本地开始日发送提醒。',
-                )}
-              </small>
+              <strong>{t('settings.reactivationReminders')}</strong>
+              <small>{t('settings.reactivationRemindersHelp')}</small>
             </span>
           </label>
           <label className="field">
-            <span>{localize('Show recent resets for', '显示最近重置')}</span>
+            <span>{t('settings.showRecentResets')}</span>
             <div className="input-suffix">
               <input
                 type="number"
@@ -373,11 +347,11 @@ export function SettingsPage() {
                   setProfileForm({ ...profileForm, recent_reset_days: Number(event.target.value) })
                 }
               />
-              <span>{localize('days', '天')}</span>
+              <span>{t('status.days').replace('{count}', '').trim()}</span>
             </div>
           </label>
           <button type="submit" className="button button--primary" disabled={busy}>
-            {localize('Save preferences', '保存偏好设置')}
+            {t('settings.savePreferences')}
           </button>
         </form>
       </section>
@@ -388,30 +362,18 @@ export function SettingsPage() {
             <Icon name="key" />
           </span>
           <div>
-            <h2>{localize('Passkey sign-in', '通行密钥登录')}</h2>
-            <p>
-              {localize(
-                'Use Face ID, Touch ID, or your device passcode instead of opening an email link.',
-                '使用 Face ID、Touch ID 或设备密码登录，无需打开邮件链接。',
-              )}
-            </p>
+            <h2>{t('settings.passkeySignIn')}</h2>
+            <p>{t('settings.passkeySignInHelp')}</p>
           </div>
         </div>
-        <p className="muted">
-          {localize(
-            'Passkeys are saved by your device or password manager. Add one while signed in, then use “Sign in with passkey” from the Home Screen app.',
-            '通行密钥由设备或密码管理器保存。登录后添加一个，即可在主屏幕应用中使用“使用通行密钥登录”。',
-          )}
-        </p>
+        <p className="muted">{t('settings.passkeySavedHelp')}</p>
         <button
           className="button button--secondary"
           disabled={busy || passkeyBusy}
           onClick={() => void registerPasskey()}
           type="button"
         >
-          {passkeyBusy
-            ? localize('Waiting for device confirmation…', '等待设备确认…')
-            : localize('Add passkey to this device', '为此设备添加通行密钥')}
+          {passkeyBusy ? t('settings.waitingDevice') : t('settings.addPasskey')}
         </button>
       </section>
 
@@ -419,56 +381,51 @@ export function SettingsPage() {
         <div className="form-section-title">
           <span className={health?.is_stale ? 'health-dot health-dot--bad' : 'health-dot'}>●</span>
           <div>
-            <h2>{localize('Reminder health', '提醒状态')}</h2>
-            <p>
-              {localize(
-                '“Sent” means the email provider accepted the message, not guaranteed inbox delivery.',
-                '“已发送”表示邮件服务商已接受消息，不代表邮件一定进入收件箱。',
-              )}
-            </p>
+            <h2>{t('settings.reminderHealth')}</h2>
+            <p>{t('settings.reminderHealthHelp')}</p>
           </div>
         </div>
         <dl className="data-list health-list">
           <div>
-            <dt>{localize('Last successful run', '上次成功运行')}</dt>
+            <dt>{t('settings.lastSuccessfulRun')}</dt>
             <dd>
               {health?.last_success_at
                 ? formatInstantInTimeZone(health.last_success_at, timezone, locale)
-                : localize('No successful run recorded', '暂无成功运行记录')}
+                : t('settings.noSuccessfulRun')}
             </dd>
           </div>
           <div>
-            <dt>{localize('Last outcome', '上次结果')}</dt>
-            <dd>{health?.last_status ?? localize('Unknown', '未知')}</dd>
+            <dt>{t('settings.lastOutcome')}</dt>
+            <dd>
+              {health?.last_status
+                ? notificationStateLabel(health.last_status, t)
+                : t('settings.unknown')}
+            </dd>
           </div>
           <div>
-            <dt>{localize('Next expected run', '预计下次运行')}</dt>
+            <dt>{t('settings.nextExpectedRun')}</dt>
             <dd>
               {health?.next_expected_at
                 ? formatInstantInTimeZone(health.next_expected_at, timezone, locale)
-                : localize('Not available', '暂无数据')}
+                : t('settings.notAvailable')}
             </dd>
           </div>
           <div>
-            <dt>{localize('Failed messages', '失败消息')}</dt>
+            <dt>{t('settings.failedMessages')}</dt>
             <dd>{health?.failed_count ?? 0}</dd>
           </div>
           <div>
-            <dt>{localize('Requires review', '需要检查')}</dt>
+            <dt>{t('settings.requiresReview')}</dt>
             <dd>{health?.requires_review_count ?? 0}</dd>
           </div>
         </dl>
         {health?.is_stale && (
           <div className="alert alert--danger">
-            <strong>{localize('Processing is stale.', '处理任务已过期。')}</strong>{' '}
-            {localize(
-              'Check whether Supabase is paused, inspect Cron and Edge Function logs, verify the Vault/Edge scheduler secret copies match, then use the protected GitHub recovery workflow once and confirm a fresh heartbeat.',
-              '请检查 Supabase 是否暂停，查看 Cron 和 Edge Function 日志，确认 Vault 与 Edge 中的调度密钥副本一致，然后运行一次受保护的 GitHub 恢复流程并确认新的心跳记录。',
-            )}
+            <strong>{t('settings.processingStale')}</strong> {t('settings.recoverySteps')}
           </div>
         )}
         <details>
-          <summary>{localize('Recent notification audit', '最近提醒审计')}</summary>
+          <summary>{t('settings.recentNotificationAudit')}</summary>
           <div className="notification-list">
             {result.data?.notifications.length ? (
               result.data.notifications.map((notification) => (
@@ -476,9 +433,9 @@ export function SettingsPage() {
                   <span
                     className={`mini-status mini-status--${notification.state === 'provider_accepted' ? 'used' : notification.state.includes('failed') || notification.state === 'requires_review' ? 'danger' : 'partial'}`}
                   >
-                    {localizeNotificationState(notification.state, localize)}
+                    {notificationStateLabel(notification.state, t)}
                   </span>
-                  <span>{localizeNotificationType(notification.notification_type, localize)}</span>
+                  <span>{notificationTypeLabel(notification.notification_type, t)}</span>
                   <span>
                     {formatInstantInTimeZone(notification.scheduled_for, timezone, locale, {
                       dateStyle: 'medium',
@@ -488,12 +445,12 @@ export function SettingsPage() {
                   <small>
                     {notification.provider_message_id ??
                       notification.last_error_category ??
-                      localize('No provider result yet', '暂无服务商结果')}
+                      t('settings.noProviderResult')}
                   </small>
                 </div>
               ))
             ) : (
-              <p className="muted">{localize('No notification events yet.', '暂无提醒事件。')}</p>
+              <p className="muted">{t('settings.noNotificationEvents')}</p>
             )}
           </div>
         </details>
@@ -505,13 +462,8 @@ export function SettingsPage() {
             <Icon name="download" />
           </span>
           <div>
-            <h2>{localize('Export & encrypted backup', '导出与加密备份')}</h2>
-            <p>
-              {localize(
-                'JSON preserves portable history. Flattened CSV files are for analysis.',
-                'JSON 会保留可迁移的完整历史；扁平 CSV 适合分析。',
-              )}
-            </p>
+            <h2>{t('settings.exportBackup')}</h2>
+            <p>{t('settings.exportBackupHelp')}</p>
           </div>
         </div>
         <div className="export-actions">
@@ -520,7 +472,7 @@ export function SettingsPage() {
             onClick={() => void exportJson()}
             disabled={busy}
           >
-            {localize('Export canonical JSON', '导出标准 JSON')}
+            {t('settings.exportJson')}
           </button>
           {(['accounts', 'definitions', 'instances', 'redemptions'] as const).map((entity) => (
             <button
@@ -529,16 +481,12 @@ export function SettingsPage() {
               onClick={() => void exportCsv(entity)}
               disabled={busy}
             >
-              {localizeEntity(entity, localize)} CSV
+              {entityLabel(entity, t)} CSV
             </button>
           ))}
         </div>
         <div className="info-box">
-          <strong>{localize('Backup safety:', '备份安全：')}</strong>{' '}
-          {localize(
-            'Exports contain private financial-benefit notes. Never commit them to GitHub. Encrypt the JSON file before off-repository storage and perform a restore drill at least quarterly on the free-tier profile.',
-            '导出文件包含私人财务福利备注。不要提交到 GitHub；存放在仓库外前请加密 JSON，并至少每季度在免费方案账户上进行一次恢复演练。',
-          )}
+          <strong>{t('settings.backupSafety')}</strong> {t('settings.backupSafetyHelp')}
         </div>
       </section>
 
@@ -546,13 +494,8 @@ export function SettingsPage() {
         <div className="form-section-title">
           <span>⇧</span>
           <div>
-            <h2>{localize('Validate & import', '验证与导入')}</h2>
-            <p>
-              {localize(
-                'Restore canonical JSON or import accounts and definitions from the CSV template. Client preview is advisory; the database validates again and rolls back everything on any error.',
-                '恢复标准 JSON，或从 CSV 模板导入账户和福利定义。客户端预览仅供参考；数据库会再次验证，任何错误都会回滚全部操作。',
-              )}
-            </p>
+            <h2>{t('settings.validateImport')}</h2>
+            <p>{t('settings.importHelp')}</p>
           </div>
         </div>
         <label className="file-drop">
@@ -562,12 +505,8 @@ export function SettingsPage() {
             onChange={(event) => void selectImport(event.target.files?.[0])}
           />
           <span>
-            <strong>
-              {localize('Select canonical JSON or template CSV', '选择标准 JSON 或模板 CSV')}
-            </strong>
-            <small>
-              {localize('Maximum 5 MiB and 5,000 total rows', '最大 5 MiB，共 5,000 行')}
-            </small>
+            <strong>{t('settings.selectImport')}</strong>
+            <small>{t('settings.importLimits')}</small>
           </span>
         </label>
         <button
@@ -581,82 +520,69 @@ export function SettingsPage() {
             )
           }
         >
-          {localize('Download CSV import template', '下载 CSV 导入模板')}
+          {t('settings.downloadTemplate')}
         </button>
         {importData && (
           <div className="import-preview">
             <h3>
-              {localize('Validation preview', '验证预览')} ·{' '}
+              {t('settings.validationPreview')} ·{' '}
               {importKind === 'JSON backup'
-                ? localize('JSON backup', 'JSON 备份')
-                : localize('CSV accounts/definitions', 'CSV 账户/福利定义')}
+                ? t('settings.importKindJson')
+                : t('settings.importKindCsv')}
             </h3>
             <dl className="preview-counts">
               <div>
-                <dt>{localize('Accounts', '账户')}</dt>
+                <dt>{t('settings.entity.accounts')}</dt>
                 <dd>{importData.accounts.length}</dd>
               </div>
               <div>
-                <dt>{localize('Definitions', '福利定义')}</dt>
+                <dt>{t('settings.entity.definitions')}</dt>
                 <dd>{importData.definitions.length}</dd>
               </div>
               <div>
-                <dt>{localize('Periods', '周期')}</dt>
+                <dt>{t('settings.entity.instances')}</dt>
                 <dd>{importData.instances.length}</dd>
               </div>
               <div>
-                <dt>{localize('Usage entries', '使用记录')}</dt>
+                <dt>{t('settings.entity.redemptions')}</dt>
                 <dd>{importData.redemptions.length}</dd>
               </div>
             </dl>
             <div className="form-grid">
               <label className="field">
-                <span>{localize('Duplicates', '重复记录')}</span>
+                <span>{t('settings.duplicates')}</span>
                 <select
                   value={duplicatePolicy}
                   onChange={(event) =>
                     setDuplicatePolicy(event.target.value as typeof duplicatePolicy)
                   }
                 >
-                  <option value="skip">{localize('Skip matching records', '跳过匹配记录')}</option>
-                  <option value="import_as_new">
-                    {localize('Import as new', '作为新记录导入')}
-                  </option>
+                  <option value="skip">{t('settings.skipMatching')}</option>
+                  <option value="import_as_new">{t('settings.importAsNew')}</option>
                 </select>
               </label>
               <label className="field">
-                <span>{localize('Current-period notifications', '当前周期提醒')}</span>
+                <span>{t('settings.currentNotifications')}</span>
                 <select
                   value={notificationPolicy}
                   onChange={(event) =>
                     setNotificationPolicy(event.target.value as typeof notificationPolicy)
                   }
                 >
-                  <option value="suppress_current">
-                    {localize('Suppress current (recommended)', '抑制当前提醒（推荐）')}
-                  </option>
-                  <option value="schedule_fresh">
-                    {localize('Schedule fresh with duplicate warning', '安排新提醒并显示重复警告')}
-                  </option>
+                  <option value="suppress_current">{t('settings.suppressCurrent')}</option>
+                  <option value="schedule_fresh">{t('settings.scheduleFresh')}</option>
                 </select>
               </label>
             </div>
             {notificationPolicy === 'schedule_fresh' && (
-              <div className="alert alert--warning">
-                {localize(
-                  'Prior provider sends cannot be deduplicated after restore. Eligible current periods may receive one new event under normal due-date rules.',
-                  '恢复后无法去重服务商之前发送的提醒。符合条件的当前周期可能会按正常到期规则收到一条新提醒。',
-                )}
-              </div>
+              <div className="alert alert--warning">{t('settings.restoreDuplicateWarning')}</div>
             )}
             <button
               className="button button--primary"
               onClick={() => void restore()}
               disabled={busy}
             >
-              {busy
-                ? localize('Restoring atomically…', '正在原子恢复…')
-                : localize('Restore validated backup', '恢复已验证备份')}
+              {busy ? t('settings.restoring') : t('settings.restoreValidated')}
             </button>
           </div>
         )}

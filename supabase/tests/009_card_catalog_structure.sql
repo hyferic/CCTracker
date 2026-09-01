@@ -10,16 +10,26 @@ select has_column('private', 'card_catalog_product_versions', 'official_source_u
   'catalog products retain all source URLs');
 select has_column('private', 'card_catalog_product_versions', 'verification_state',
   'catalog products expose an honest verification state');
+select has_column('private', 'card_catalog_product_versions', 'structured_content_hash',
+  'catalog products hash normalized metadata');
 select has_column('private', 'card_catalog_template_versions', 'benefit_value',
   'catalog benefits carry a normalized value');
 select has_column('private', 'card_catalog_template_versions', 'structured_recurrence_type',
   'catalog benefits carry normalized recurrence');
 select has_column('private', 'card_catalog_template_versions', 'merchant_scope',
   'catalog benefits can enumerate merchant scope');
+select has_column('private', 'card_catalog_template_versions', 'structured_content_hash',
+  'catalog benefits hash normalized metadata');
 select has_view('public', 'card_catalog_coverage',
   'catalog coverage view is available');
 select has_view('public', 'card_catalog_quality',
   'catalog quality view is available');
+select has_column('public', 'card_catalog_coverage', 'current_products',
+  'coverage report exposes an auditable installed product inventory');
+select has_column('public', 'card_catalog_current', 'product_metadata',
+  'current catalog exposes product metadata');
+select has_column('public', 'card_catalog_current', 'benefit_metadata',
+  'current catalog exposes benefit metadata');
 
 select is((select count(*) from public.card_catalog_coverage), 9::bigint,
   'coverage report includes every named issuer in scope');
@@ -39,6 +49,16 @@ select is((select count(*) from public.card_catalog_current
 select is((select count(*) from public.card_catalog_current
   where benefit_verification_state <> 'verified'),
   54::bigint, 'existing benefit rows remain explicitly pending review rather than overstated');
+select is((select count(*) from public.card_catalog_current
+  where length(product_structured_content_hash) = 64
+    and length(benefit_structured_content_hash) = 64),
+  54::bigint, 'current catalog rows expose deterministic hashes for normalized metadata');
+select is((select count(distinct product_version_id)
+  from private.card_catalog_product_sources),
+  17::bigint, 'every installed product has a provenance source mapping');
+select is((select count(distinct template_version_id)
+  from private.card_catalog_template_sources),
+  54::bigint, 'every installed benefit has a provenance source mapping');
 select is((select current_product_count from public.card_catalog_coverage
   where issuer_key = 'wells-fargo'), 0::bigint,
   'coverage report records Wells Fargo as an in-scope gap');
@@ -48,6 +68,15 @@ select is((select current_product_count from public.card_catalog_coverage
 select is((select current_product_count from public.card_catalog_coverage
   where issuer_key = 'discover'), 0::bigint,
   'coverage report records Discover as an in-scope gap');
+select ok((select current_products @> '[{"stable_key":"chase-sapphire-reserve","product_name":"Sapphire Reserve","official_source_urls":["https://creditcards.chase.com/rewards-credit-cards/sapphire/reserve"],"verification_state":"pending","verified_on":"2026-08-25"}]'::jsonb
+  from public.card_catalog_coverage where issuer_key = 'chase'),
+  'coverage inventory retains product identity, verification state, and date');
+select is((select current_products from public.card_catalog_coverage
+  where issuer_key = 'barclays-us'), '[]'::jsonb,
+  'coverage inventory is empty for an issuer with no installed product rows');
+select is((select count(*) from public.card_catalog_coverage
+  where jsonb_array_length(current_products) = current_product_count),
+  9::bigint, 'coverage inventory length matches the reported current product count');
 
 select throws_ok($sql$
   update private.card_catalog_template_versions

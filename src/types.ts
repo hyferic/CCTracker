@@ -258,6 +258,13 @@ export interface Redemption {
   updated_at: string;
 }
 
+export interface ConfirmBenefitPeriodResult {
+  instance_id: string;
+  archived: boolean;
+  generated_instances: number;
+  confirmation_redemption_id: string | null;
+}
+
 export interface SchedulerHealth {
   last_success_at: string | null;
   last_status: string | null;

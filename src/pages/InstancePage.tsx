@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ErrorState, SkeletonRows } from '../components/AsyncState';
 import { Icon } from '../components/Icon';
@@ -16,6 +16,7 @@ import {
   markUncappedComplete,
   overrideInstance,
   recordRedemption,
+  reopenConfirmedBenefitPeriod,
 } from '../services/api';
 import type { Redemption } from '../types';
 import { recurrenceLabel, useI18n } from '../features/i18n/I18nContext';
@@ -32,7 +33,7 @@ export function InstancePage() {
   const { instanceId = '' } = useParams();
   const navigate = useNavigate();
   const { today } = useBusinessDate();
-  const { language, t, localize } = useI18n();
+  const { language, t } = useI18n();
   const locale = language === 'zh-CN' ? 'zh-CN' : 'en-US';
   const result = useAsync(async () => {
     const [instance, redemptions] = await Promise.all([
@@ -60,10 +61,17 @@ export function InstancePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const instance = result.data?.instance;
+  const canCorrectConfirmedUse =
+    instance?.is_audit_version &&
+    instance.void_reason === 'Confirmed used; archived from dashboard';
 
   function openRedemption(redemption?: Redemption, useRemainder = false) {
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setEditingRedemption(redemption ?? null);
     setForm(
       redemption
@@ -148,8 +156,26 @@ export function InstancePage() {
     }
   }
 
+  async function reopenConfirmedUse() {
+    if (!instance || !canCorrectConfirmedUse) return;
+    if (!window.confirm(t('instance.reopenConfirmedConfirm'))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await reopenConfirmedBenefitPeriod(instanceId);
+      setMessage(t('instance.reopenedForCorrection'));
+      result.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('instance.reopenError'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function openOverride() {
     if (!instance) return;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setOverrideForm({
       available_quantity: instance.available_quantity?.toString() ?? '',
       period_start: instance.period_start,
@@ -159,6 +185,44 @@ export function InstancePage() {
     setError(null);
     setOverrideOpen(true);
   }
+
+  useEffect(() => {
+    const open = redemptionOpen || overrideOpen;
+    if (!open) {
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+      return;
+    }
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = () =>
+      Array.from(
+        dialog.querySelectorAll<HTMLElement>('button, input, textarea, select, [href]'),
+      ).filter((element) => !element.hasAttribute('disabled'));
+    focusable()[0]?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        if (redemptionOpen) setRedemptionOpen(false);
+        else setOverrideOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const elements = focusable();
+      if (!elements.length) return;
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [overrideOpen, redemptionOpen]);
 
   async function saveOverride(event: FormEvent) {
     event.preventDefault();
@@ -216,13 +280,13 @@ export function InstancePage() {
       {instance.is_audit_version && (
         <div className="alert alert--warning" role="status">
           <strong>{t('instance.auditVersion')}</strong> {t('instance.readOnly')}
-          {instance.void_reason ? ` ${localize('Reason:', '原因：')} ${instance.void_reason}` : ''}
+          {instance.void_reason ? ` ${t('common.reason')} ${instance.void_reason}` : ''}
         </div>
       )}
       <section className="detail-hero">
         <div className="detail-hero-main">
           <p className="eyebrow">
-            {instance.account_display_name ?? instance.issuer ?? localize('Unassigned', '未分配')} ·{' '}
+            {instance.account_display_name ?? instance.issuer ?? t('common.unassigned')} ·{' '}
             {instance.category}
           </p>
           <h2>{instance.benefit_name}</h2>
@@ -235,18 +299,23 @@ export function InstancePage() {
         <div className="detail-balance">
           <p>
             {instance.value_kind === 'percentage_cashback' && finite
-              ? localize('Potential remaining cashback', '预计剩余返现')
+              ? t('instance.potentialRemainingCashback')
               : t('dashboard.remaining')}
           </p>
           <strong>{formatQuantity(instance.remaining_quantity, quantityOptions)}</strong>
           <span>
             {finite
               ? `${formatQuantity(instance.redeemed_quantity, quantityOptions)} ${t('status.used').toLowerCase()} ${t('dashboard.of')} ${formatQuantity(instance.available_quantity, quantityOptions)}`
-              : `${formatQuantity(instance.earned_to_date, { ...quantityOptions, valueKind: 'money' })} ${localize('earned to date', '累计获得')}`}
+              : `${formatQuantity(instance.earned_to_date, { ...quantityOptions, valueKind: 'money' })} ${t('instance.earnedToDate')}`}
           </span>
         </div>
       </section>
       <div className="detail-actions">
+        {canCorrectConfirmedUse && (
+          <button className="button button--primary" onClick={() => void reopenConfirmedUse()}>
+            {t('instance.correctConfirmation')}
+          </button>
+        )}
         {instance.lifecycle_status === 'active' && instance.usage_status !== 'used' && (
           <button className="button button--primary" onClick={() => openRedemption()}>
             {t('instance.recordUsage')}
@@ -267,15 +336,18 @@ export function InstancePage() {
         )}
         {instance.enrollment_required && !instance.enrolled_at && (
           <button className="button button--secondary" onClick={() => void markEnrolled()}>
-            {localize('Mark enrollment complete', '标记注册完成')}
+            {t('instance.markEnrollment')}
           </button>
         )}
         <Link className="button button--secondary" to={`/benefits/${instance.definition_id}/edit`}>
           {t('benefits.editRules')}
         </Link>
-        <button className="text-button" onClick={openOverride}>
-          {localize('Override this period', '仅覆盖此周期')}
-        </button>
+        {instance.is_live &&
+          !(instance.recurrence_type === 'one_time' && instance.usage_status !== 'unused') && (
+            <button className="text-button" onClick={openOverride}>
+              {t('instance.override')}
+            </button>
+          )}
       </div>
       <div className="detail-grid">
         <section className="panel detail-section">
@@ -310,14 +382,14 @@ export function InstancePage() {
               <dt>{t('instance.recurrence')}</dt>
               <dd>
                 {instance.recurrence_enabled
-                  ? recurrenceLabel(instance.recurrence_type, instance.recurrence_basis, localize)
-                  : localize('One-time', '一次性')}
+                  ? recurrenceLabel(instance.recurrence_type, instance.recurrence_basis, t)
+                  : t('instance.oneTime')}
               </dd>
             </div>
             <div>
               <dt>{t('instance.occurrence')}</dt>
               <dd>
-                <code>{instance.occurrence_key}</code> · {localize('version', '版本')}{' '}
+                <code>{instance.occurrence_key}</code> · {t('common.version')}{' '}
                 {instance.instance_version}
               </dd>
             </div>
@@ -373,9 +445,9 @@ export function InstancePage() {
               <dd>
                 {instance.enrollment_required
                   ? instance.enrolled_at
-                    ? `${localize('Completed', '已完成')} ${formatDate(instance.enrolled_at, locale)}`
+                    ? `${t('instance.completed')} ${formatDate(instance.enrolled_at, locale)}`
                     : instance.enrollment_deadline
-                      ? `${localize('Required by', '截止于')} ${formatDate(instance.enrollment_deadline, locale)}`
+                      ? `${t('instance.requiredBy')} ${formatDate(instance.enrollment_deadline, locale)}`
                       : t('instance.required')
                   : t('instance.notRequired')}
               </dd>
@@ -394,7 +466,7 @@ export function InstancePage() {
           <div>
             <p className="eyebrow">{t('instance.redemptionHistory')}</p>
             <h2>
-              {result.data?.redemptions.length ?? 0} {localize('usage entries', '条使用记录')}
+              {result.data?.redemptions.length ?? 0} {t('instance.usageEntries')}
             </h2>
           </div>
           {instance.lifecycle_status === 'active' && (
@@ -422,24 +494,25 @@ export function InstancePage() {
                   <span>{formatDate(redemption.used_on, locale)}</span>
                 </div>
                 <div className="redemption-copy">
-                  <strong>{redemption.merchant ?? localize('Usage', '使用记录')}</strong>
+                  <strong>{redemption.merchant ?? t('common.usage')}</strong>
                   <span>
-                    {redemption.transaction_description ??
-                      localize('No transaction description', '暂无交易说明')}
+                    {redemption.transaction_description ?? t('common.noTransactionDescription')}
                   </span>
                   {redemption.notes && <small>{redemption.notes}</small>}
                 </div>
-                <div className="redemption-actions">
-                  <button className="text-button" onClick={() => openRedemption(redemption)}>
-                    {t('common.edit')}
-                  </button>
-                  <button
-                    className="text-button text-button--danger"
-                    onClick={() => void removeRedemption(redemption)}
-                  >
-                    {t('common.delete')}
-                  </button>
-                </div>
+                {instance.is_live && (
+                  <div className="redemption-actions">
+                    <button className="text-button" onClick={() => openRedemption(redemption)}>
+                      {t('common.edit')}
+                    </button>
+                    <button
+                      className="text-button text-button--danger"
+                      onClick={() => void removeRedemption(redemption)}
+                    >
+                      {t('common.delete')}
+                    </button>
+                  </div>
+                )}
               </article>
             ))}
           </div>
@@ -455,6 +528,7 @@ export function InstancePage() {
       {redemptionOpen && (
         <div className="modal-backdrop">
           <section
+            ref={dialogRef}
             className="modal"
             role="dialog"
             aria-modal="true"
@@ -554,6 +628,7 @@ export function InstancePage() {
       {overrideOpen && (
         <div className="modal-backdrop">
           <section
+            ref={dialogRef}
             className="modal"
             role="dialog"
             aria-modal="true"
@@ -561,8 +636,8 @@ export function InstancePage() {
           >
             <div className="modal-head">
               <div>
-                <p className="eyebrow">{localize('History-safe exception', '保留历史的例外')}</p>
-                <h2 id="override-title">{localize('Override this period only', '仅覆盖此周期')}</h2>
+                <p className="eyebrow">{t('instance.historySafeException')}</p>
+                <h2 id="override-title">{t('instance.overridePeriodOnly')}</h2>
               </div>
               <button
                 className="icon-button"
@@ -573,16 +648,11 @@ export function InstancePage() {
               </button>
             </div>
             <form className="form-stack" onSubmit={(event) => void saveOverride(event)}>
-              <div className="alert alert--warning">
-                {localize(
-                  'This voids the current version for audit and creates a replacement. Other periods and the master rules are unchanged.',
-                  '这会为审计作废当前版本并创建替代周期。其他周期和主规则不会改变。',
-                )}
-              </div>
+              <div className="alert alert--warning">{t('instance.overrideWarning')}</div>
               <div className="form-grid">
                 {finite ? (
                   <label className="field">
-                    <span>{localize('Available quantity', '可用数量')}</span>
+                    <span>{t('instance.availableQuantity')}</span>
                     <input
                       required
                       type="number"
@@ -598,16 +668,11 @@ export function InstancePage() {
                     />
                   </label>
                 ) : (
-                  <div className="info-box">
-                    {localize(
-                      'This period is uncapped. A period override cannot convert its value model to a finite cap.',
-                      '此周期不限额度。周期覆盖不能将其价值模型转换为有限上限。',
-                    )}
-                  </div>
+                  <div className="info-box">{t('instance.uncappedOverrideInfo')}</div>
                 )}
                 <span />
                 <label className="field">
-                  <span>{localize('Period starts', '周期开始')}</span>
+                  <span>{t('instance.periodStarts')}</span>
                   <input
                     required
                     type="date"
@@ -618,7 +683,7 @@ export function InstancePage() {
                   />
                 </label>
                 <label className="field">
-                  <span>{localize('Period ends', '周期结束')}</span>
+                  <span>{t('instance.periodEnds')}</span>
                   <input
                     required
                     type="date"
@@ -629,7 +694,7 @@ export function InstancePage() {
                   />
                 </label>
                 <label className="field field--wide">
-                  <span>{localize('Audit reason', '审计原因')}</span>
+                  <span>{t('instance.auditReason')}</span>
                   <textarea
                     required
                     rows={3}
@@ -637,10 +702,7 @@ export function InstancePage() {
                     onChange={(event) =>
                       setOverrideForm({ ...overrideForm, reason: event.target.value })
                     }
-                    placeholder={localize(
-                      'Why this period differs from the recurring definition',
-                      '说明此周期为何不同于周期定义',
-                    )}
+                    placeholder={t('instance.auditReasonPlaceholder')}
                   />
                 </label>
               </div>
@@ -658,9 +720,7 @@ export function InstancePage() {
                   {t('common.cancel')}
                 </button>
                 <button type="submit" className="button button--primary" disabled={busy}>
-                  {busy
-                    ? localize('Creating audit version…', '正在创建审计版本…')
-                    : localize('Override period', '覆盖周期')}
+                  {busy ? t('instance.creatingAuditVersion') : t('instance.overridePeriod')}
                 </button>
               </div>
             </form>
