@@ -5,6 +5,50 @@
 -- changing them would make otherwise valid historical data look untrusted.
 -- structured_content_hash covers the new normalized fields instead.
 
+create or replace function private.catalog_text_array_hash_input(p_values text[])
+returns text
+language plpgsql
+immutable
+strict
+set search_path = ''
+as $$
+declare
+  v_value text;
+  v_result text := '';
+  v_first boolean := true;
+begin
+  foreach v_value in array p_values loop
+    if v_value is null then
+      continue;
+    end if;
+    if not v_first then
+      v_result := v_result || ',';
+    end if;
+    v_result := v_result || v_value;
+    v_first := false;
+  end loop;
+  return v_result;
+end;
+$$;
+
+revoke all on function private.catalog_text_array_hash_input(text[]) from public, anon, authenticated;
+
+create or replace function private.catalog_date_hash_input(p_value date)
+returns text
+language sql
+immutable
+strict
+set search_path = ''
+as $$
+  select case
+    when p_value = 'infinity'::date then 'infinity'
+    when p_value = '-infinity'::date then '-infinity'
+    else (p_value - date '0001-01-01')::text
+  end;
+$$;
+
+revoke all on function private.catalog_date_hash_input(date) from public, anon, authenticated;
+
 create or replace function private.catalog_urls_valid(p_urls text[])
 returns boolean
 language sql
@@ -40,9 +84,10 @@ alter table private.card_catalog_product_versions
             || coalesce(card_type, '') || '|' || coalesce(market_scope, '') || '|'
             || coalesce(annual_fee::text, '') || '|' || coalesce(annual_fee_currency, '') || '|'
             || coalesce(official_product_url, '') || '|'
-            || coalesce(array_to_string(official_source_urls, ','), '') || '|'
+            || coalesce(private.catalog_text_array_hash_input(official_source_urls), '') || '|'
             || coalesce(verification_state, '') || '|'
-            || coalesce(effective_from::text, '') || '|' || coalesce(effective_to::text, '') || '|'
+            || coalesce(private.catalog_date_hash_input(effective_from), '') || '|'
+            || coalesce(private.catalog_date_hash_input(effective_to), '') || '|'
             || coalesce(verification_notes, '') || '|' || coalesce(metadata::text, ''),
         'sha256'),
       'hex')
@@ -73,14 +118,31 @@ alter table private.card_catalog_template_versions
             || coalesce(product_version_id::text, '') || '|' || coalesce(name, '') || '|'
             || coalesce(benefit_description, '') || '|' || coalesce(benefit_value::text, '') || '|'
             || coalesce(benefit_currency, '') || '|' || coalesce(benefit_unit, '') || '|'
-            || coalesce(structured_recurrence_type::text, '') || '|'
-            || coalesce(structured_recurrence_basis::text, '') || '|'
+            || coalesce(
+              case structured_recurrence_type
+                when 'one_time'::public.benefit_recurrence_type then 'one_time'
+                when 'monthly'::public.benefit_recurrence_type then 'monthly'
+                when 'quarterly'::public.benefit_recurrence_type then 'quarterly'
+                when 'semiannual'::public.benefit_recurrence_type then 'semiannual'
+                when 'annual'::public.benefit_recurrence_type then 'annual'
+                when 'custom'::public.benefit_recurrence_type then 'custom'
+              end,
+              '') || '|'
+            || coalesce(
+              case structured_recurrence_basis
+                when 'none'::public.benefit_recurrence_basis then 'none'
+                when 'calendar'::public.benefit_recurrence_basis then 'calendar'
+                when 'anniversary'::public.benefit_recurrence_basis then 'anniversary'
+              end,
+              '') || '|'
             || coalesce(reset_strategy, '') || '|' || coalesce(activation_required::text, '') || '|'
             || coalesce(eligibility::text, '') || '|' || coalesce(limits::text, '') || '|'
-            || coalesce(array_to_string(merchant_scope, ','), '') || '|'
-            || coalesce(array_to_string(official_source_urls, ','), '') || '|'
-            || coalesce(verification_state, '') || '|' || coalesce(effective_from::text, '') || '|'
-            || coalesce(effective_to::text, '') || '|' || coalesce(verification_notes, '') || '|'
+            || coalesce(private.catalog_text_array_hash_input(merchant_scope), '') || '|'
+            || coalesce(private.catalog_text_array_hash_input(official_source_urls), '') || '|'
+            || coalesce(verification_state, '') || '|'
+            || coalesce(private.catalog_date_hash_input(effective_from), '') || '|'
+            || coalesce(private.catalog_date_hash_input(effective_to), '') || '|'
+            || coalesce(verification_notes, '') || '|'
             || coalesce(metadata::text, ''),
         'sha256'),
       'hex')

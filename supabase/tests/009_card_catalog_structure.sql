@@ -53,6 +53,24 @@ select is((select count(*) from public.card_catalog_current
   where length(product_structured_content_hash) = 64
     and length(benefit_structured_content_hash) = 64),
   54::bigint, 'current catalog rows expose deterministic hashes for normalized metadata');
+select ok(not exists (
+  select 1
+  from pg_catalog.pg_attribute a
+  join pg_catalog.pg_attrdef d
+    on d.adrelid = a.attrelid and d.adnum = a.attnum
+  where a.attrelid in (
+      'private.card_catalog_product_versions'::pg_catalog.regclass,
+      'private.card_catalog_template_versions'::pg_catalog.regclass)
+    and a.attname = 'structured_content_hash'
+    and (
+      pg_catalog.pg_get_expr(d.adbin, d.adrelid) like '%array_to_string%'
+      or pg_catalog.pg_get_expr(d.adbin, d.adrelid) like '%convert_to%'
+      or pg_catalog.pg_get_expr(d.adbin, d.adrelid) like '%effective_from::text%'
+      or pg_catalog.pg_get_expr(d.adbin, d.adrelid) like '%effective_to::text%'
+      or pg_catalog.pg_get_expr(d.adbin, d.adrelid) like '%structured_recurrence_type::text%'
+      or pg_catalog.pg_get_expr(d.adbin, d.adrelid) like '%structured_recurrence_basis::text%'
+    )
+), 'generated hash expressions avoid non-immutable serializers and casts');
 select is((select count(distinct product_version_id)
   from private.card_catalog_product_sources),
   17::bigint, 'every installed product has a provenance source mapping');
