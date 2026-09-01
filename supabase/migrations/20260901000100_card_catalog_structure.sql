@@ -35,8 +35,7 @@ alter table private.card_catalog_product_versions
   add column if not exists structured_content_hash text generated always as (
     pg_catalog.encode(
       extensions.digest(
-        pg_catalog.convert_to(
-          coalesce(stable_key, '') || '|' || coalesce(version::text, '') || '|'
+        coalesce(stable_key, '') || '|' || coalesce(version::text, '') || '|'
             || coalesce(issuer, '') || '|' || coalesce(product_name, '') || '|'
             || coalesce(card_type, '') || '|' || coalesce(market_scope, '') || '|'
             || coalesce(annual_fee::text, '') || '|' || coalesce(annual_fee_currency, '') || '|'
@@ -45,7 +44,6 @@ alter table private.card_catalog_product_versions
             || coalesce(verification_state, '') || '|'
             || coalesce(effective_from::text, '') || '|' || coalesce(effective_to::text, '') || '|'
             || coalesce(verification_notes, '') || '|' || coalesce(metadata::text, ''),
-          'UTF8'),
         'sha256'),
       'hex')
   ) stored;
@@ -71,8 +69,7 @@ alter table private.card_catalog_template_versions
   add column if not exists structured_content_hash text generated always as (
     pg_catalog.encode(
       extensions.digest(
-        pg_catalog.convert_to(
-          coalesce(stable_key, '') || '|' || coalesce(version::text, '') || '|'
+        coalesce(stable_key, '') || '|' || coalesce(version::text, '') || '|'
             || coalesce(product_version_id::text, '') || '|' || coalesce(name, '') || '|'
             || coalesce(benefit_description, '') || '|' || coalesce(benefit_value::text, '') || '|'
             || coalesce(benefit_currency, '') || '|' || coalesce(benefit_unit, '') || '|'
@@ -85,7 +82,6 @@ alter table private.card_catalog_template_versions
             || coalesce(verification_state, '') || '|' || coalesce(effective_from::text, '') || '|'
             || coalesce(effective_to::text, '') || '|' || coalesce(verification_notes, '') || '|'
             || coalesce(metadata::text, ''),
-          'UTF8'),
         'sha256'),
       'hex')
   ) stored;
