@@ -462,10 +462,11 @@ begin
       'fixed_end', new.fixed_end)) then
     raise exception 'catalog payload and structured limits differ' using errcode = '22023';
   end if;
-  if new.merchant_scope is distinct from case
-      when nullif(new.payload->>'merchant', '') is null then '{}'
-      else array[new.payload->>'merchant']
-    end then
+  if new.merchant_scope is distinct from (
+      case
+        when nullif(new.payload->>'merchant', '') is null then '{}'::text[]
+        else array[new.payload->>'merchant']
+      end) then
     raise exception 'catalog payload and structured merchant_scope differ' using errcode = '22023';
   end if;
   if not (new.official_url = any(new.official_source_urls)) then
