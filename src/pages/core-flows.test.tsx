@@ -877,9 +877,9 @@ describe('authenticated core flows', () => {
     ]);
     renderRoute('/dashboard', '/dashboard', <DashboardPage />);
 
-    await screen.findByRole('link', { name: 'Partial credit', exact: true });
+    await screen.findByRole('link', { name: 'Partial credit' });
     const card = (name: string) =>
-      screen.getByRole('link', { name, exact: true }).closest('article') as HTMLElement;
+      screen.getByRole('link', { name }).closest('article') as HTMLElement;
     const partial = card('Partial credit');
     const unused = card('Unused credit');
     const exhausted = card('Exhausted credit');
@@ -893,8 +893,8 @@ describe('authenticated core flows', () => {
     expect(partialProgress).toHaveAttribute('value', '40');
     expect(partialProgress).toHaveAttribute('max', '100');
     expect(partialProgress).toHaveAccessibleName('Partial credit benefit usage progress');
-    expect(within(partial).locator('time')).toHaveText('Feb 29');
-    expect(within(partial).locator('time')).toHaveAttribute('dateTime', '2028-02-29');
+    expect(partial.querySelector('time')).toHaveTextContent('Feb 29');
+    expect(partial.querySelector('time')).toHaveAttribute('dateTime', '2028-02-29');
     expect(partial).not.toHaveTextContent('Partially used');
     expect(partial).not.toHaveTextContent('Available');
     expect(partial).not.toHaveTextContent('Ends');

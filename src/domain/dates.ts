@@ -31,7 +31,7 @@ export function formatDate(
   options: Intl.DateTimeFormatOptions = {},
 ): string {
   const date = plainDate(value);
-  const dateOptions = Object.keys(options).length
+  const dateOptions: Intl.DateTimeFormatOptions = Object.keys(options).length
     ? options
     : { year: 'numeric', month: 'short', day: 'numeric' };
   return new Intl.DateTimeFormat(locale, {
