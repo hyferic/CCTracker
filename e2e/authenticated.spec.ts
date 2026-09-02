@@ -181,7 +181,7 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   await usageDialog.getByLabel('Merchant').fill(merchantName);
   await usageDialog.getByRole('button', { name: 'Save usage' }).click();
   await expect(page.getByRole('status')).toContainText('Remaining value was recalculated.');
-  await expect(page.locator('.detail-balance')).toContainText('Remaining');
+  await expect(page.locator('.detail-balance')).toContainText('remaining');
   await expect(page.locator('.detail-balance')).toContainText('$60');
   await expect(page.locator('.detail-balance')).toContainText('$40 used of $100');
   await expect(page.locator('.detail-status .status')).toHaveText(
