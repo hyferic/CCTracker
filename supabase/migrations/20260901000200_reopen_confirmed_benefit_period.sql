@@ -266,8 +266,7 @@ begin
   update public.benefit_instances i
   set confirmation_redemption_id = null,
       voided_at = null,
-      void_reason = null,
-      updated_at = statement_timestamp()
+      void_reason = null
   where i.id = v_instance.id
   returning * into v_instance;
   delete from public.redemptions r

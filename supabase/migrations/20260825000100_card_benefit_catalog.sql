@@ -107,7 +107,7 @@ as $$
 declare
   v_rule jsonb;
   v_unknown text;
-  v_months integer[] := '{}';
+  v_months integer[] := '{}'::integer[];
 begin
   if p_rules is null or jsonb_typeof(p_rules) <> 'array' or jsonb_array_length(p_rules) > 12 then
     raise exception 'period_value_rules must be an array with at most 12 entries' using errcode = '22023';
@@ -981,8 +981,8 @@ declare
   v_template private.card_catalog_template_versions%rowtype;
   v_payload jsonb;
   v_created jsonb;
-  v_definition_ids uuid[] := '{}';
-  v_template_ids uuid[] := '{}';
+  v_definition_ids uuid[] := '{}'::uuid[];
+  v_template_ids uuid[] := '{}'::uuid[];
   v_age integer;
   v_unknown text;
 begin
@@ -1355,7 +1355,7 @@ as $$
 declare
   v_version integer;
   v_item jsonb;
-  v_warnings text[] := '{}';
+  v_warnings text[] := '{}'::text[];
   v_result jsonb;
   v_legacy_backup jsonb;
   v_import_marker constant text := '__perkledger_import_source__:';

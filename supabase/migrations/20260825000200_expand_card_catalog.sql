@@ -110,8 +110,8 @@ declare
   v_template private.card_catalog_template_versions%rowtype;
   v_payload jsonb;
   v_created jsonb;
-  v_definition_ids uuid[] := '{}';
-  v_template_ids uuid[] := '{}';
+  v_definition_ids uuid[] := '{}'::uuid[];
+  v_template_ids uuid[] := '{}'::uuid[];
   v_age integer;
   v_unknown text;
 begin

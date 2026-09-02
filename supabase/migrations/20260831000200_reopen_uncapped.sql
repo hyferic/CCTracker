@@ -24,8 +24,7 @@ begin
 
   update public.benefit_instances i
   set manual_completed_at = null,
-      manual_completion_note = null,
-      updated_at = statement_timestamp()
+      manual_completion_note = null
   where i.id = v_result.id
   returning * into v_result;
 

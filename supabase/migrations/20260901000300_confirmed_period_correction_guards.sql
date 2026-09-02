@@ -219,8 +219,7 @@ begin
       manual_completed_at = case when v_manual_completion then null else i.manual_completed_at end,
       manual_completion_note = case when v_manual_completion then null else i.manual_completion_note end,
       voided_at = null,
-      void_reason = null,
-      updated_at = statement_timestamp()
+      void_reason = null
   where i.id = v_instance.id
   returning * into v_instance;
   if not v_manual_completion then
