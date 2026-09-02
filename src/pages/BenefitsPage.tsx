@@ -178,9 +178,14 @@ export function BenefitsPage() {
                   <div>
                     <dt>{t('benefits.history')}</dt>
                     <dd>
-                      {livePeriods.length} {t('benefits.livePeriod')}
+                      {livePeriods.length}{' '}
+                      {t(livePeriods.length === 1 ? 'benefits.livePeriod' : 'benefits.livePeriods')}
                       {auditVersions.length
-                        ? ` · ${auditVersions.length} ${t('benefits.auditVersionCount')}`
+                        ? ` · ${auditVersions.length} ${t(
+                            auditVersions.length === 1
+                              ? 'benefits.auditVersionCount'
+                              : 'benefits.auditVersions',
+                          )}`
                         : ''}
                     </dd>
                   </div>

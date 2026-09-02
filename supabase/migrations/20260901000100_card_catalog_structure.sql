@@ -560,6 +560,7 @@ select t.id, s.id,
   case when t.official_url = s.url then 'official_benefit_terms' else 'issuer_reference' end
 from private.card_catalog_template_versions t
 join private.card_catalog_source_documents s on s.url = any(t.official_source_urls)
+where t.is_current and t.status = 'current'
 on conflict (template_version_id, source_id) do update set source_role = excluded.source_role;
 
 create index if not exists card_catalog_source_documents_issuer_idx
