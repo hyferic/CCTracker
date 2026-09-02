@@ -185,7 +185,7 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   await expect(page.locator('.detail-balance')).toContainText('$60');
   await expect(page.locator('.detail-balance')).toContainText('$40 used of $100');
   await expect(page.locator('.detail-status .status')).toHaveText(
-    /^(?:Expiring Soon · )?Partially Used$/,
+    /^(?:Expiring soon · )?Partially used$/,
   );
 
   await page.goto('/#/dashboard');
