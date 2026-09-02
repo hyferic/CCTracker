@@ -25,12 +25,17 @@ export function daysBetween(start: string | Temporal.PlainDate, end: string | Te
   return startDate.until(endDate, { largestUnit: 'days' }).days;
 }
 
-export function formatDate(value: string, locale = 'en-US'): string {
+export function formatDate(
+  value: string,
+  locale = 'en-US',
+  options: Intl.DateTimeFormatOptions = {},
+): string {
   const date = plainDate(value);
+  const dateOptions = Object.keys(options).length
+    ? options
+    : { year: 'numeric', month: 'short', day: 'numeric' };
   return new Intl.DateTimeFormat(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+    ...dateOptions,
     timeZone: 'UTC',
   }).format(new Date(Date.UTC(date.year, date.month - 1, date.day)));
 }

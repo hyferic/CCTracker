@@ -82,7 +82,7 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   const editedAccountName = `${accountName} Edited`;
   const benefitName = `E2E Hotel Credit ${suffix}`;
   const editedBenefitName = `${benefitName} Revised`;
-  const merchantName = `E2E Hotel ${suffix}`;
+  const merchantName = 'Participating hotels';
 
   await page.goto('/#/dashboard');
   await expect(page.getByTestId('app-shell')).toBeVisible();
@@ -126,6 +126,7 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   await page.getByLabel('Description').fill('A real frontend-to-RPC-to-database contract fixture.');
   await page.getByLabel('Benefit amount').fill('100');
   await page.getByLabel('Merchant', { exact: true }).fill(merchantName);
+  await page.getByLabel('Merchant category').fill('Hotels');
   await page.getByLabel('Effective date').fill(localDate(-1));
   await page.getByLabel(/Expiration\/end date/i).fill(localDate(60));
   await page.getByLabel('Recurrence').selectOption('monthly');
@@ -193,10 +194,25 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
     has: page.getByRole('link', { name: editedBenefitName, exact: true }),
   });
   await expect(dashboardBenefit).toHaveCount(1);
-  await expect(dashboardBenefit).toContainText('$60');
-  await expect(dashboardBenefit).toContainText('Partially used');
-  await expect(dashboardBenefit).toContainText('Contract');
+  await expect(dashboardBenefit.locator('.dashboard-benefit-card')).toHaveText(
+    'Contract · •••• 8181',
+  );
+  await expect(dashboardBenefit.locator('.dashboard-benefit-ratio')).toHaveText('$60/$100');
+  await expect(dashboardBenefit.getByRole('progressbar')).toHaveAttribute('value', '40');
+  await expect(dashboardBenefit.getByRole('progressbar')).toHaveAttribute('max', '100');
+  await expect(dashboardBenefit.locator('time')).toHaveText(/^[A-Z][a-z]{2} \d{1,2}$/);
+  await expect(dashboardBenefit).not.toContainText('Partially used');
+  await expect(dashboardBenefit).not.toContainText('Ends');
+  await expect(dashboardBenefit).not.toContainText('Resets');
   await expect(page.getByText('Other reminders', { exact: true })).toHaveCount(0);
+
+  const merchantButton = dashboardBenefit.getByRole('button', { name: merchantName });
+  await expect(merchantButton).toBeVisible();
+  await merchantButton.click();
+  const merchantPopover = dashboardBenefit.getByRole('dialog', { name: 'Condition' });
+  await expect(merchantPopover).toContainText('Hotels');
+  await merchantButton.press('Escape');
+  await expect(merchantPopover).not.toBeVisible();
 
   await dashboardBenefit.getByRole('button', { name: 'Record usage' }).click();
   const dashboardUsageDialog = page.getByRole('dialog', { name: 'Confirm usage' });
@@ -208,8 +224,9 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   await expect(
     page
       .locator('article.dashboard-benefit')
-      .filter({ has: page.getByRole('link', { name: editedBenefitName, exact: true }) }),
-  ).toContainText('$40');
+      .filter({ has: page.getByRole('link', { name: editedBenefitName, exact: true }) })
+      .locator('.dashboard-benefit-ratio'),
+  ).toHaveText('$40/$100');
 
   await page.goto('/#/benefits');
   const activeBenefitCard = benefitCard(page, editedBenefitName);

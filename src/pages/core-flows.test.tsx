@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, vi } from 'vitest';
@@ -619,7 +619,7 @@ describe('authenticated core flows', () => {
     const user = userEvent.setup();
     const instance = benefitInstance({
       value_kind: 'percentage_cashback',
-      available_quantity: null,
+      available_quantity: 10,
       remaining_quantity: 10,
       recurrence_type: 'one_time',
       recurrence_enabled: false,
@@ -777,7 +777,8 @@ describe('authenticated core flows', () => {
 
     expect(await screen.findByRole('link', { name: 'Dining credit' })).toBeInTheDocument();
     expect(screen.getByText('Amex Gold · •••• 1001')).toBeInTheDocument();
-    expect(screen.getByText(/Resets Mar 1, 2028/)).toBeInTheDocument();
+    expect(screen.getByText('Feb 29')).toBeInTheDocument();
+    expect(screen.queryByText('Use at participating U.S. restaurants.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Resy' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Dining' }));
@@ -789,6 +790,130 @@ describe('authenticated core flows', () => {
       'href',
       'https://americanexpress.com',
     );
+  });
+
+  it('renders finite progress ratios and a compact uncapped value safely', async () => {
+    api.listInstances.mockResolvedValue([
+      benefitInstance({
+        instance_id: 'partial-progress',
+        benefit_name: 'Partial credit',
+        available_quantity: 10,
+        redeemed_quantity: 4,
+        remaining_quantity: 6,
+        usage_status: 'partial',
+        merchant: null,
+        merchant_category: null,
+        eligibility_notes: null,
+        website: null,
+      }),
+      benefitInstance({
+        instance_id: 'unused-progress',
+        benefit_name: 'Unused credit',
+        available_quantity: 10,
+        redeemed_quantity: 0,
+        remaining_quantity: 10,
+        usage_status: 'unused',
+        merchant: null,
+        merchant_category: null,
+        eligibility_notes: null,
+        website: null,
+      }),
+      benefitInstance({
+        instance_id: 'exhausted-progress',
+        benefit_name: 'Exhausted credit',
+        available_quantity: 10,
+        redeemed_quantity: 10,
+        remaining_quantity: 0,
+        usage_status: 'partial',
+        merchant: null,
+        merchant_category: null,
+        eligibility_notes: null,
+        website: null,
+      }),
+      benefitInstance({
+        instance_id: 'zero-progress',
+        benefit_name: 'Zero credit',
+        available_quantity: 0,
+        redeemed_quantity: 0,
+        remaining_quantity: 0,
+        usage_status: 'unused',
+        merchant: null,
+        merchant_category: null,
+        eligibility_notes: null,
+        website: null,
+      }),
+      benefitInstance({
+        instance_id: 'negative-remaining-progress',
+        benefit_name: 'Overused credit',
+        available_quantity: 10,
+        remaining_quantity: -2,
+        merchant: null,
+        merchant_category: null,
+        eligibility_notes: null,
+        website: null,
+      }),
+      benefitInstance({
+        instance_id: 'above-total-progress',
+        benefit_name: 'Overavailable credit',
+        available_quantity: 10,
+        remaining_quantity: 12,
+        merchant: null,
+        merchant_category: null,
+        eligibility_notes: null,
+        website: null,
+      }),
+      benefitInstance({
+        instance_id: 'uncapped-progress',
+        benefit_name: 'Uncapped cashback',
+        available_quantity: null,
+        redeemed_quantity: 0,
+        remaining_quantity: null,
+        usage_status: 'unused',
+        merchant: null,
+        merchant_category: null,
+        eligibility_notes: null,
+        website: null,
+      }),
+    ]);
+    renderRoute('/dashboard', '/dashboard', <DashboardPage />);
+
+    await screen.findByRole('link', { name: 'Partial credit', exact: true });
+    const card = (name: string) =>
+      screen.getByRole('link', { name, exact: true }).closest('article') as HTMLElement;
+    const partial = card('Partial credit');
+    const unused = card('Unused credit');
+    const exhausted = card('Exhausted credit');
+    const zero = card('Zero credit');
+    const overused = card('Overused credit');
+    const overavailable = card('Overavailable credit');
+    const uncapped = card('Uncapped cashback');
+
+    expect(await within(partial).findByText('$6/$10')).toBeInTheDocument();
+    const partialProgress = within(partial).getByRole('progressbar');
+    expect(partialProgress).toHaveAttribute('value', '40');
+    expect(partialProgress).toHaveAttribute('max', '100');
+    expect(partialProgress).toHaveAccessibleName('Partial credit benefit usage progress');
+    expect(within(partial).locator('time')).toHaveText('Feb 29');
+    expect(within(partial).locator('time')).toHaveAttribute('dateTime', '2028-02-29');
+    expect(partial).not.toHaveTextContent('Partially used');
+    expect(partial).not.toHaveTextContent('Available');
+    expect(partial).not.toHaveTextContent('Ends');
+    expect(partial).not.toHaveTextContent('Resets');
+
+    expect(within(unused).getByText('$10/$10')).toBeInTheDocument();
+    expect(within(unused).getByRole('progressbar')).toHaveAttribute('value', '0');
+    expect(within(exhausted).getByText('$0/$10')).toBeInTheDocument();
+    expect(within(exhausted).getByRole('progressbar')).toHaveAttribute('value', '100');
+    expect(within(zero).getByText('$0/$0')).toBeInTheDocument();
+    expect(within(zero).getByRole('progressbar')).toHaveAttribute('value', '0');
+    expect(within(overused).getByText('-$2/$10')).toBeInTheDocument();
+    expect(within(overused).getByRole('progressbar')).toHaveAttribute('value', '100');
+    expect(within(overavailable).getByText('$12/$10')).toBeInTheDocument();
+    expect(within(overavailable).getByRole('progressbar')).toHaveAttribute('value', '0');
+    expect(within(uncapped).getByText('Uncapped')).toBeInTheDocument();
+    expect(within(uncapped).queryByText(/\//)).not.toBeInTheDocument();
+    expect(within(uncapped).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(within(uncapped).queryByText('Track usage manually')).not.toBeInTheDocument();
   });
 
   it('uses an account nickname instead of the generated card name', async () => {

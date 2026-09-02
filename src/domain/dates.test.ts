@@ -15,6 +15,8 @@ describe('date-only and timezone rules', () => {
     expect(daysBetween('2028-02-29', '2028-02-29')).toBe(0);
     expect(daysBetween('2028-03-01', '2028-02-29')).toBe(-1);
     expect(formatDate('2028-02-29')).toBe('Feb 29, 2028');
+    expect(formatDate('2028-09-30', 'en-US', { month: 'short', day: 'numeric' })).toBe('Sep 30');
+    expect(formatDate('2028-09-30', 'zh-CN', { month: 'short', day: 'numeric' })).toBe('9月30日');
   });
 
   it('uses the explicit IANA timezone across midnight and DST', () => {

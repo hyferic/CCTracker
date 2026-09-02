@@ -818,7 +818,7 @@ code {
 
 .dashboard-benefit {
   display: grid;
-  grid-template-columns: minmax(14rem, 2fr) minmax(7rem, 1fr) minmax(9rem, 1fr) auto auto auto;
+  grid-template-columns: minmax(14rem, 2fr) minmax(7rem, 1fr) auto;
   align-items: center;
   gap: var(--space-4);
   min-width: 0;
@@ -834,12 +834,33 @@ code {
   background: var(--color-surface-hover);
 }
 
+.dashboard-benefit-header {
+  display: flex;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
 .dashboard-benefit-main,
-.dashboard-benefit-value,
 .dashboard-benefit-deadline {
   display: grid;
   min-width: 0;
   gap: var(--space-1);
+}
+
+.dashboard-benefit-main {
+  flex: 1 1 auto;
+}
+
+.dashboard-benefit-value {
+  display: flex;
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  align-items: center;
 }
 
 .dashboard-benefit-name {
@@ -857,9 +878,8 @@ code {
 }
 
 .dashboard-benefit-card,
-.dashboard-benefit-condition,
 .dashboard-benefit-value span,
-.dashboard-benefit-deadline span {
+.dashboard-benefit-deadline time {
   overflow: hidden;
   color: var(--color-muted);
   font-size: var(--text-xs);
@@ -867,21 +887,54 @@ code {
   white-space: nowrap;
 }
 
-.dashboard-benefit-condition {
-  max-width: 34rem;
+.dashboard-benefit-progress {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.dashboard-benefit-value strong,
-.dashboard-benefit-deadline strong {
+.dashboard-benefit-progress-bar {
+  flex: 1 1 4rem;
+  min-width: 2.5rem;
+  width: 100%;
+  height: 0.5rem;
+  accent-color: var(--color-accent);
+}
+
+.dashboard-benefit-ratio {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-benefit-value > strong {
   font-size: var(--text-base);
   font-weight: 750;
 }
 
-.dashboard-benefit-value strong {
-  font-variant-numeric: tabular-nums;
+.dashboard-benefit-deadline {
+  flex: 0 0 auto;
+  align-self: start;
+  justify-self: end;
+  text-align: right;
 }
 
-.dashboard-benefit--soon .dashboard-benefit-deadline strong {
+.dashboard-benefit .merchant-popover-wrap {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.dashboard-benefit-actions {
+  display: flex;
+  grid-column: 3;
+  grid-row: 2;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.dashboard-benefit--soon .dashboard-benefit-deadline time {
   color: var(--color-danger);
 }
 
@@ -2344,27 +2397,27 @@ code {
   }
 
   .dashboard-benefit {
-    grid-template-columns: minmax(0, 1fr) minmax(7rem, 0.8fr) minmax(8rem, 0.9fr);
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .dashboard-benefit-main {
-    grid-column: 1;
+  .dashboard-benefit-header {
+    grid-column: 1 / -1;
   }
 
   .dashboard-benefit-value {
-    grid-column: 2;
-  }
-
-  .dashboard-benefit-deadline {
-    grid-column: 3;
+    grid-column: 1;
+    grid-row: 2;
   }
 
   .dashboard-benefit .merchant-popover-wrap {
     grid-column: 1;
+    grid-row: 3;
   }
 
-  .dashboard-benefit > .button--small {
-    justify-self: end;
+  .dashboard-benefit-actions {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: center;
   }
 
   .definition-actions {
@@ -2512,10 +2565,17 @@ code {
     padding: var(--space-4);
   }
 
-  .dashboard-benefit-main,
-  .dashboard-benefit-value,
-  .dashboard-benefit-deadline {
+  .dashboard-benefit-header,
+  .dashboard-benefit-value {
     grid-column: 1 / -1;
+  }
+
+  .dashboard-benefit-header {
+    grid-row: 1;
+  }
+
+  .dashboard-benefit-value {
+    grid-row: 2;
   }
 
   .dashboard-benefit-value,
@@ -2525,14 +2585,18 @@ code {
     justify-content: space-between;
   }
 
+  .dashboard-benefit-deadline {
+    justify-content: flex-end;
+  }
+
   .dashboard-benefit-name,
-  .dashboard-benefit-condition,
   .dashboard-benefit-card {
     white-space: normal;
   }
 
   .dashboard-benefit .merchant-popover-wrap {
-    grid-column: 1;
+    grid-column: 1 / -1;
+    grid-row: auto;
   }
 
   .dashboard-benefit .merchant-popover {
@@ -2542,9 +2606,10 @@ code {
     box-shadow: none;
   }
 
-  .dashboard-benefit > .button--small {
-    grid-column: 2;
-    justify-self: end;
+  .dashboard-benefit-actions {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-content: flex-end;
   }
 
   .summary-card {

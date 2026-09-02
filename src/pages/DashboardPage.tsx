@@ -75,6 +75,24 @@ function cardLabel(
   );
 }
 
+function isUncappedBenefit(instance: Pick<BenefitInstance, 'available_quantity'>) {
+  return instance.available_quantity === null;
+}
+
+function usageProgressPercent(total: number | null, remaining: number | null) {
+  if (
+    total === null ||
+    remaining === null ||
+    !Number.isFinite(total) ||
+    !Number.isFinite(remaining) ||
+    total <= 0
+  ) {
+    return 0;
+  }
+  const used = total - remaining;
+  return Math.min(100, Math.max(0, (used / total) * 100));
+}
+
 function isBroadMerchantLabel(merchant: string | null | undefined) {
   const label = merchant?.trim().replace(/\s+/g, ' ');
   if (!label) return false;
@@ -97,38 +115,6 @@ function merchantGuidanceLabel(instance: BenefitInstance, t: (key: MessageKey) =
   return instance.merchant?.trim() && isBroadMerchantLabel(instance.merchant)
     ? instance.merchant
     : instance.merchant_category || t('dashboard.condition');
-}
-
-function conditionSummary(
-  instance: BenefitInstance,
-  t: (key: MessageKey) => string,
-  locale: string,
-) {
-  return (
-    [
-      instance.merchant ? instance.merchant : instance.merchant_category,
-      instance.eligibility_notes,
-      instance.cashback_percentage !== null
-        ? `${instance.cashback_percentage}% ${t('dashboard.cashback')}`
-        : null,
-      instance.minimum_spend !== null
-        ? `${t('dashboard.minimumSpend')} ${formatQuantity(instance.minimum_spend, { valueKind: 'money', currency: instance.currency, locale })}`
-        : null,
-      instance.enrollment_required ? t('dashboard.enrollmentRequired') : null,
-    ]
-      .filter(Boolean)
-      .join(' · ') || t('dashboard.conditionUnknown')
-  );
-}
-
-function relativeDeadline(
-  instance: BenefitInstance,
-  t: (key: MessageKey) => string,
-  locale: string,
-) {
-  if (instance.recurrence_type !== 'one_time' && instance.display_reset_date)
-    return `${t('dashboard.resets')} ${formatDate(instance.display_reset_date, locale)}`;
-  return `${t('dashboard.ends')} ${formatDate(instance.period_end, locale)}`;
 }
 
 export function DashboardPage() {
@@ -211,13 +197,13 @@ export function DashboardPage() {
     previousFocusRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSelected(instance);
-    setAmount(instance.remaining_quantity);
+    setAmount(isUncappedBenefit(instance) ? null : instance.remaining_quantity);
     setUsedOn(today);
     setError(null);
   }
 
   async function markComplete(instance: BenefitInstance) {
-    if (busy) return;
+    if (busy || !isUncappedBenefit(instance)) return;
     if (!window.confirm(t('dashboard.completeConfirm'))) return;
     setBusy(true);
     setError(null);
@@ -236,7 +222,7 @@ export function DashboardPage() {
   }
 
   async function confirmUsed(instance: BenefitInstance) {
-    if (busy) return;
+    if (busy || isUncappedBenefit(instance)) return;
     if (!window.confirm(t('dashboard.confirmUsedConfirm'))) return;
     setBusy(true);
     setError(null);
@@ -302,7 +288,9 @@ export function DashboardPage() {
       setError(t('dashboard.invalidAmount'));
       return;
     }
-    if (selected.remaining_quantity !== null && amount > selected.remaining_quantity) {
+    const isUncapped = isUncappedBenefit(selected);
+    const remainingQuantity = selected.remaining_quantity ?? 0;
+    if (!isUncapped && amount > remainingQuantity) {
       setError(t('dashboard.amountExceedsRemaining'));
       return;
     }
@@ -320,7 +308,7 @@ export function DashboardPage() {
     setError(null);
     try {
       let action: RecordedAction | null;
-      if (selected.remaining_quantity !== null && amount >= selected.remaining_quantity) {
+      if (!isUncapped && amount >= remainingQuantity) {
         const confirmation = await confirmBenefitPeriodUsed(
           selected.instance_id,
           usedOn,
@@ -354,7 +342,7 @@ export function DashboardPage() {
           : null;
       }
       setSelected(null);
-      if (selected.remaining_quantity !== null && amount >= selected.remaining_quantity) {
+      if (!isUncapped && amount >= remainingQuantity) {
         setHiddenInstanceIds((current) => new Set(current).add(selected.instance_id));
       }
       setNotice({ title: t('dashboard.recorded'), body: t('dashboard.recordedBody') });
@@ -505,51 +493,55 @@ export function DashboardPage() {
                     unitLabel: instance.unit_label,
                     locale,
                   } as const;
+                  const isUncapped = isUncappedBenefit(instance);
+                  const progressPercent = usageProgressPercent(
+                    instance.available_quantity,
+                    instance.remaining_quantity,
+                  );
                   return (
                     <article
                       className={`dashboard-benefit dashboard-benefit--${group}`}
                       key={instance.instance_id}
                     >
-                      <div className="dashboard-benefit-main">
-                        <Link
-                          className="dashboard-benefit-name"
-                          to={`/instances/${instance.instance_id}`}
-                        >
-                          {instance.benefit_name}
-                        </Link>
-                        <span className="dashboard-benefit-card">
-                          {cardLabel(account, instance, t)}
-                          {account?.last_four ? ` · •••• ${account.last_four}` : ''}
-                        </span>
-                        <span className="dashboard-benefit-condition">
-                          {conditionSummary(instance, t, locale)}
-                        </span>
+                      <div className="dashboard-benefit-header">
+                        <div className="dashboard-benefit-main">
+                          <Link
+                            className="dashboard-benefit-name"
+                            to={`/instances/${instance.instance_id}`}
+                          >
+                            {instance.benefit_name}
+                          </Link>
+                          <span className="dashboard-benefit-card">
+                            {cardLabel(account, instance, t)}
+                            {account?.last_four ? ` · •••• ${account.last_four}` : ''}
+                          </span>
+                        </div>
+                        <div className="dashboard-benefit-deadline">
+                          <time dateTime={instance.period_end}>
+                            {formatDate(instance.period_end, locale, {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </time>
+                        </div>
                       </div>
                       <div className="dashboard-benefit-value">
-                        {instance.remaining_quantity === null ? (
-                          <>
-                            <strong>{t('dashboard.uncapped')}</strong>
-                            <span>{t('dashboard.trackUsage')}</span>
-                          </>
+                        {isUncapped ? (
+                          <strong>{t('dashboard.uncapped')}</strong>
                         ) : (
-                          <>
-                            <strong>
-                              {formatQuantity(instance.remaining_quantity, quantityOptions)}
-                            </strong>
-                            <span>
-                              {t('dashboard.remaining')} {t('dashboard.of')}{' '}
+                          <div className="dashboard-benefit-progress">
+                            <progress
+                              className="dashboard-benefit-progress-bar"
+                              value={progressPercent}
+                              max={100}
+                              aria-label={`${instance.benefit_name} ${t('dashboard.usageProgress')}`}
+                            />
+                            <span className="dashboard-benefit-ratio">
+                              {formatQuantity(instance.remaining_quantity, quantityOptions)}/
                               {formatQuantity(instance.available_quantity, quantityOptions)}
                             </span>
-                          </>
+                          </div>
                         )}
-                      </div>
-                      <div className="dashboard-benefit-deadline">
-                        <strong>{relativeDeadline(instance, t, locale)}</strong>
-                        <span>
-                          {instance.usage_status === 'partial'
-                            ? t('dashboard.partial')
-                            : t('dashboard.available')}
-                        </span>
                       </div>
                       {hasMerchantGuidance(instance) && (
                         <div className="merchant-popover-wrap">
@@ -595,8 +587,8 @@ export function DashboardPage() {
                           )}
                         </div>
                       )}
-                      {instance.remaining_quantity === null ? (
-                        <>
+                      {isUncappedBenefit(instance) ? (
+                        <div className="dashboard-benefit-actions">
                           <button
                             className="button button--secondary button--small"
                             type="button"
@@ -612,9 +604,9 @@ export function DashboardPage() {
                           >
                             {t('dashboard.markComplete')}
                           </button>
-                        </>
+                        </div>
                       ) : (
-                        <>
+                        <div className="dashboard-benefit-actions">
                           <button
                             className="button button--primary button--small"
                             type="button"
@@ -631,7 +623,7 @@ export function DashboardPage() {
                           >
                             {t('dashboard.recordUsage')}
                           </button>
-                        </>
+                        </div>
                       )}
                     </article>
                   );
@@ -673,7 +665,11 @@ export function DashboardPage() {
                   type="number"
                   min="0.01"
                   step={selected.value_kind === 'points' ? '1' : '0.01'}
-                  max={selected.remaining_quantity ?? undefined}
+                  max={
+                    isUncappedBenefit(selected)
+                      ? undefined
+                      : (selected.remaining_quantity ?? undefined)
+                  }
                   value={amount ?? ''}
                   onChange={(event) =>
                     setAmount(event.target.value ? Number(event.target.value) : null)
