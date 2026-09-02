@@ -171,7 +171,10 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   );
 
   await editedBenefitCard.getByRole('link', { name: 'View current period' }).click();
-  await page.getByRole('button', { name: '+ Record usage' }).click();
+  await page
+    .locator('.detail-actions')
+    .getByRole('button', { name: 'Record usage', exact: true })
+    .click();
   const usageDialog = page.getByRole('dialog', { name: 'Record usage' });
   await usageDialog.getByLabel('Benefit amount used').fill('40');
   await usageDialog.getByLabel('Date used').fill(localDate());
