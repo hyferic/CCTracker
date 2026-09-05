@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { ErrorState, EmptyState, SkeletonRows } from '../components/AsyncState';
 import { Icon } from '../components/Icon';
-import { PageHeader } from '../components/PageHeader';
 import { formatDate } from '../domain/dates';
 import { formatQuantity } from '../domain/money';
 import { groupOutstanding, isOutstanding, type UrgencyGroup } from '../domain/dashboard';
@@ -438,17 +437,6 @@ export function DashboardPage() {
           {error}
         </div>
       )}
-      <PageHeader
-        eyebrow={t('dashboard.eyebrow')}
-        title={t('dashboard.title')}
-        description={t('dashboard.description')}
-        action={
-          <Link className="button button--secondary" to="/benefits/new">
-            <Icon name="plus" />
-            {t('common.addBenefit')}
-          </Link>
-        }
-      />
       {result.loading ? (
         <SkeletonRows count={4} />
       ) : outstanding.length === 0 ? (
@@ -464,11 +452,11 @@ export function DashboardPage() {
         </EmptyState>
       ) : (
         <section className="dashboard-outstanding" aria-labelledby="outstanding-heading">
-          <div className="section-head">
-            <div>
-              <p className="eyebrow">{t('dashboard.outstanding')}</p>
-              <h2 id="outstanding-heading">{outstanding.length}</h2>
-            </div>
+          <div className="dashboard-queue-summary">
+            <h2 id="outstanding-heading">{t('dashboard.outstanding')}</h2>
+            <span className="dashboard-queue-count">
+              <strong>{outstanding.length}</strong> {t('dashboard.groupCount')}
+            </span>
           </div>
           {sections.map(({ group, instances }) => (
             <section

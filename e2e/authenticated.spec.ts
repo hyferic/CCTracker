@@ -206,6 +206,38 @@ test('authenticated owner completes core UI, RPC, persistence, and rollback flow
   await expect(dashboardBenefit).not.toContainText('Resets');
   await expect(page.getByText('Other reminders', { exact: true })).toHaveCount(0);
 
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect(dashboardBenefit.getByRole('button', { name: 'Confirm used' })).toBeInViewport();
+  await expect(dashboardBenefit.getByRole('button', { name: 'Record usage' })).toBeInViewport();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBeTruthy();
+  await dashboardBenefit.getByRole('button', { name: 'Record usage' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Confirm usage' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Confirm usage' })).not.toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(dashboardBenefit.getByRole('button', { name: 'Confirm used' })).toBeInViewport();
+  await expect(dashboardBenefit.getByRole('button', { name: 'Record usage' })).toBeInViewport();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBeTruthy();
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(dashboardBenefit.getByRole('button', { name: 'Confirm used' })).toBeVisible();
+  await expect(dashboardBenefit.getByRole('button', { name: 'Record usage' })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBeTruthy();
+
   const merchantButton = dashboardBenefit.getByRole('button', { name: merchantName });
   await expect(merchantButton).toBeVisible();
   await merchantButton.click();
